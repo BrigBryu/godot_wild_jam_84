@@ -4,6 +4,7 @@ extends Node2D
 @export var world_height: int = 25  # Much smaller - mostly beach
 @export var tile_size: int = 16
 @export var ocean_height: int = 5   # Small strip of ocean at bottom
+@export var deep_water_height: int = 2  # Only bottom 2 rows are impassable deep water
 @export var starfish_density: float = 0.015  # Slightly higher density for smaller beach
 @export var enable_wet_sand: bool = false
 @export var low_tide_mode: bool = false
@@ -14,8 +15,11 @@ var starfish_texture: Texture2D
 
 var sand_tiles: Node2D
 var ocean_tiles: Node2D
+var water_collision: Node2D
+var world_boundaries: Node2D
 var starfish_container: Node2D
 var wet_sand_overlay: Sprite2D
+var deep_water_overlay: ColorRect
 
 var wet_sand_generator: WetSandGenerator
 var wetness_map: Array
@@ -43,11 +47,30 @@ func setup_containers():
 	ocean_tiles.z_index = -1
 	add_child(ocean_tiles)
 	
+	# Water collision container
+	water_collision = Node2D.new()
+	water_collision.name = "WaterCollision"
+	add_child(water_collision)
+	
+	# World boundaries container
+	world_boundaries = Node2D.new()
+	world_boundaries.name = "WorldBoundaries"
+	add_child(world_boundaries)
+	
 	# Wet sand overlay container
 	wet_sand_overlay = Sprite2D.new()
 	wet_sand_overlay.name = "WetSandOverlay"
 	wet_sand_overlay.z_index = 1
 	add_child(wet_sand_overlay)
+	
+	# Deep water overlay - only for the deepest water rows
+	deep_water_overlay = ColorRect.new()
+	deep_water_overlay.name = "DeepWaterOverlay"
+	deep_water_overlay.color = Color(0, 0, 0.3, 0.5)  # Darker blue, more transparent
+	deep_water_overlay.position = Vector2(0, (world_height - deep_water_height) * tile_size)
+	deep_water_overlay.size = Vector2(world_width * tile_size, deep_water_height * tile_size)
+	deep_water_overlay.z_index = 0
+	add_child(deep_water_overlay)
 	
 	starfish_container = Node2D.new()
 	starfish_container.name = "Starfish"
@@ -85,6 +108,7 @@ func setup_wet_sand_generator():
 func generate_beach():
 	generate_ocean()
 	generate_sand()
+	generate_world_boundaries()
 	if enable_wet_sand:
 		generate_wet_sand_patterns()
 	var critter_count = spawn_starfish()
@@ -93,7 +117,7 @@ func generate_beach():
 	SignalBus.stage_generation_completed.emit(critter_count)
 	
 	print("Beach generated: ", world_width, "x", world_height, " tiles")
-	print("Ocean height: ", ocean_height, " tiles")
+	print("Ocean height: ", ocean_height, " tiles (", deep_water_height, " deep water, ", ocean_height - deep_water_height, " shallow water)")
 	print("Wet sand patterns: ", "Enabled" if enable_wet_sand else "Disabled")
 	print("Total tiles: ", world_width * world_height)
 	print("Critters spawned: ", critter_count)
@@ -106,6 +130,21 @@ func generate_ocean():
 			sprite.position = Vector2(x * tile_size, (world_height - y - 1) * tile_size)
 			# No color variation - just basic tile
 			ocean_tiles.add_child(sprite)
+			
+			# Only add collision for deep water (bottom rows)
+			if y < deep_water_height:
+				var static_body = StaticBody2D.new()
+				static_body.position = Vector2(x * tile_size, (world_height - y - 1) * tile_size)
+				static_body.name = "DeepWaterCollision_" + str(x) + "_" + str(y)
+				
+				var collision_shape = CollisionShape2D.new()
+				var rect_shape = RectangleShape2D.new()
+				rect_shape.size = Vector2(tile_size, tile_size)
+				collision_shape.shape = rect_shape
+				collision_shape.position = Vector2(tile_size/2, tile_size/2)  # Center the collision
+				
+				static_body.add_child(collision_shape)
+				water_collision.add_child(static_body)
 
 func generate_sand():
 	# Generate wetness map first
@@ -140,6 +179,51 @@ func generate_sand():
 			# else: no modulation, just basic tile
 			
 			sand_tiles.add_child(sprite)
+
+func generate_world_boundaries():
+	var world_width_pixels = world_width * tile_size
+	var world_height_pixels = world_height * tile_size
+	var boundary_thickness = 32  # Make boundaries thick enough to prevent escapes
+	
+	# Top boundary
+	var top_boundary = StaticBody2D.new()
+	top_boundary.name = "TopBoundary"
+	top_boundary.position = Vector2(world_width_pixels / 2, -boundary_thickness / 2)
+	
+	var top_collision = CollisionShape2D.new()
+	var top_shape = RectangleShape2D.new()
+	top_shape.size = Vector2(world_width_pixels + boundary_thickness * 2, boundary_thickness)
+	top_collision.shape = top_shape
+	
+	top_boundary.add_child(top_collision)
+	world_boundaries.add_child(top_boundary)
+	
+	# Left boundary
+	var left_boundary = StaticBody2D.new()
+	left_boundary.name = "LeftBoundary"
+	left_boundary.position = Vector2(-boundary_thickness / 2, world_height_pixels / 2)
+	
+	var left_collision = CollisionShape2D.new()
+	var left_shape = RectangleShape2D.new()
+	left_shape.size = Vector2(boundary_thickness, world_height_pixels + boundary_thickness * 2)
+	left_collision.shape = left_shape
+	
+	left_boundary.add_child(left_collision)
+	world_boundaries.add_child(left_boundary)
+	
+	# Right boundary - match camera limit_right (1264)
+	var camera_limit_right = 1264
+	var right_boundary = StaticBody2D.new()
+	right_boundary.name = "RightBoundary"
+	right_boundary.position = Vector2(camera_limit_right + boundary_thickness / 2, world_height_pixels / 2)
+	
+	var right_collision = CollisionShape2D.new()
+	var right_shape = RectangleShape2D.new()
+	right_shape.size = Vector2(boundary_thickness, world_height_pixels + boundary_thickness * 2)
+	right_collision.shape = right_shape
+	
+	right_boundary.add_child(right_collision)
+	world_boundaries.add_child(right_boundary)
 
 func generate_wet_sand_patterns():
 	# Generate a texture overlay for additional detail
@@ -201,6 +285,10 @@ func regenerate():
 	for child in sand_tiles.get_children():
 		child.queue_free()
 	for child in ocean_tiles.get_children():
+		child.queue_free()
+	for child in water_collision.get_children():
+		child.queue_free()
+	for child in world_boundaries.get_children():
 		child.queue_free()
 	for child in starfish_container.get_children():
 		child.queue_free()

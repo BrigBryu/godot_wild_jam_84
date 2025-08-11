@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 
 SignalBus="*res://utilities/signals/SignalBus.gd"
 ScoreManager="*res://utilities/managers/ScoreManager.gd"
+GameManager="*res://game/GameManager.gd"
 
 [display]
 
@@ -27,6 +28,43 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="viewport"
 window/stretch/aspect="keep_width"
+
+[file_customization]
+
+folder_colors={
+"res://assets/": "red",
+"res://assets/credits/": "gray",
+"res://assets/shaders/": "purple",
+"res://common/": "blue",
+"res://common/debug/": "orange",
+"res://common/shaders/": "purple",
+"res://common/state_machine/": "teal",
+"res://config/": "yellow",
+"res://config/audio/": "pink",
+"res://config/graphics/": "purple",
+"res://config/settings/": "orange",
+"res://entities/": "green",
+"res://entities/organisms/": "teal",
+"res://entities/organisms/critters/": "blue",
+"res://entities/organisms/critters/starfish/": "pink",
+"res://entities/player/": "blue",
+"res://entities/ui/": "purple",
+"res://entities/weather/": "gray",
+"res://game/": "red",
+"res://game/hud/": "teal",
+"res://localization/": "orange",
+"res://localization/en/": "yellow",
+"res://localization/es/": "pink",
+"res://localization/fr/": "blue",
+"res://stages/": "purple",
+"res://stages/beach/": "blue",
+"res://stages/pier/": "teal",
+"res://stages/tilesets/": "gray",
+"res://utilities/": "yellow",
+"res://utilities/managers/": "red",
+"res://utilities/scene_manager/": "blue",
+"res://utilities/signals/": "pink"
+}
 
 [input]
 
@@ -69,45 +107,9 @@ interact={
 2d_physics/layer_4="Items"
 2d_physics/layer_5="Interactables"
 
-[file_customization]
-
-folder_colors={
-"res://assets/": "red",
-"res://assets/credits/": "gray",
-"res://assets/shaders/": "purple",
-"res://common/": "blue",
-"res://common/debug/": "orange",
-"res://common/shaders/": "purple",
-"res://common/state_machine/": "teal",
-"res://config/": "yellow",
-"res://config/audio/": "pink",
-"res://config/graphics/": "purple",
-"res://config/settings/": "orange",
-"res://entities/": "green",
-"res://entities/organisms/": "teal",
-"res://entities/organisms/critters/": "blue",
-"res://entities/organisms/critters/starfish/": "pink",
-"res://entities/player/": "blue",
-"res://entities/ui/": "purple",
-"res://entities/weather/": "gray",
-"res://game/": "red",
-"res://game/hud/": "teal",
-"res://localization/": "orange",
-"res://localization/en/": "yellow",
-"res://localization/es/": "pink",
-"res://localization/fr/": "blue",
-"res://stages/": "purple",
-"res://stages/beach/": "blue",
-"res://stages/pier/": "teal",
-"res://stages/tilesets/": "gray",
-"res://utilities/": "yellow",
-"res://utilities/managers/": "red",
-"res://utilities/scene_manager/": "blue",
-"res://utilities/signals/": "pink"
-}
-
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
