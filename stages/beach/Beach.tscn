@@ -1,0 +1,59 @@
+[gd_scene load_steps=6 format=3 uid="uid://beach_scene"]
+
+[ext_resource type="Script" path="res://stages/beach/BeachGenerator.gd" id="1_beach_gen"]
+[ext_resource type="PackedScene" uid="uid://player_scene" path="res://entities/player/Player.tscn" id="3_player"]
+[ext_resource type="PackedScene" uid="uid://simple_game_hud" path="res://game/hud/SimpleHUD.tscn" id="4_simple_hud"]
+[ext_resource type="PackedScene" uid="uid://c8xn5y4b7tutorial" path="res://game/tutorial/TutorialPanel.tscn" id="5_tutorial"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.529, 0.808, 0.922, 1)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_water"]
+radius = 16.0
+
+[node name="Beach" type="Node2D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="BeachGenerator" type="Node2D" parent="."]
+script = ExtResource("1_beach_gen")
+world_width = 80
+world_height = 25
+tile_size = 16
+ocean_height = 5
+starfish_density = 0.015
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+position = Vector2(50, 200)
+
+[node name="PlayerCamera" type="Camera2D" parent="."]
+position = Vector2(50, 200)
+enabled = true
+zoom = Vector2(3, 3)
+position_smoothing_enabled = true
+position_smoothing_speed = 5.0
+drag_horizontal_enabled = true
+drag_vertical_enabled = true
+drag_left_margin = 0.1
+drag_right_margin = 0.1
+drag_top_margin = 0.1
+drag_bottom_margin = 0.1
+
+
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="SimpleHUD" parent="UI" instance=ExtResource("4_simple_hud")]
+
+[node name="TutorialPanel" parent="UI" instance=ExtResource("5_tutorial")]
+
+[node name="WaterArea" type="Area2D" parent="."]
+visible = false
+collision_layer = 2
+collision_mask = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WaterArea"]
+position = Vector2(640, 720)
+shape = SubResource("CircleShape2D_water")

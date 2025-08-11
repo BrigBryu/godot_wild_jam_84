@@ -1,0 +1,60 @@
+[gd_scene load_steps=2 format=3 uid="uid://simple_game_hud"]
+
+[ext_resource type="Script" path="res://game/hud/SimpleHUD.gd" id="1_simple_hud"]
+
+[node name="SimpleHUD" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_simple_hud")
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_bottom = 50.0
+offset_left = 20.0
+offset_right = -20.0
+
+[node name="ScoreLabel" type="Label" parent="TopBar"]
+layout_mode = 2
+text = "Score: 0"
+add_theme_font_size_override("font_size", 24)
+
+[node name="VSeparator" type="VSeparator" parent="TopBar"]
+layout_mode = 2
+
+[node name="TimerLabel" type="Label" parent="TopBar"]
+layout_mode = 2
+text = "Time: 01:00"
+add_theme_font_size_override("font_size", 24)
+
+[node name="VSeparator2" type="VSeparator" parent="TopBar"]
+layout_mode = 2
+
+[node name="CritterCountLabel" type="Label" parent="TopBar"]
+layout_mode = 2
+text = "Critters: 0/0"
+add_theme_font_size_override("font_size", 24)
+
+[node name="InteractionHint" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -100.0
+offset_top = -80.0
+offset_right = 100.0
+offset_bottom = -50.0
+text = "Press E to collect"
+horizontal_alignment = 1
+vertical_alignment = 1
+add_theme_font_size_override("font_size", 20)
+add_theme_color_override("font_color", Color.YELLOW)
+visible = false
