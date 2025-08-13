@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://simple_game_hud"]
 
-[ext_resource type="Script" path="res://game/hud/SimpleHUD.gd" id="1_simple_hud"]
+[ext_resource type="Script" path="res://entities/ui/hud/SimpleHUD.gd" id="1_simple_hud"]
 
 [node name="SimpleHUD" type="Control"]
 layout_mode = 3

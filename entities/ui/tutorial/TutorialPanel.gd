@@ -82,7 +82,9 @@ func hide_tutorial():
 	panel_container.visible = false
 	# Resume game
 	get_tree().paused = false
-	# Emit signal that tutorial is complete (optional)
+	# Emit tutorial completed signal to start the timer
+	SignalBus.tutorial_completed.emit()
+	# Show interaction hint
 	SignalBus.ui_show_interaction_hint.emit(true, "Press E to collect critters!")
 	# Remove tutorial after a delay
 	await get_tree().create_timer(3.0).timeout

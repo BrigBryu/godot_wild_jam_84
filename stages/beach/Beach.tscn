@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3 uid="uid://btgfjrecu1twm"]
+[gd_scene load_steps=8 format=3 uid="uid://btgfjrecu1twm"]
 
 [ext_resource type="Script" uid="uid://bjpq3656hspe7" path="res://stages/beach/BeachGenerator.gd" id="1_beach_gen"]
 [ext_resource type="PackedScene" uid="uid://bviq1a3p66vqg" path="res://entities/player/Player.tscn" id="3_player"]
-[ext_resource type="PackedScene" path="res://game/hud/SimpleHUD.tscn" id="4_simple_hud"]
-[ext_resource type="PackedScene" uid="uid://dsf86cw23a20v" path="res://game/tutorial/TutorialPanel.tscn" id="5_tutorial"]
+[ext_resource type="PackedScene" path="res://entities/ui/hud/SimpleHUD.tscn" id="4_simple_hud"]
+[ext_resource type="PackedScene" uid="uid://dsf86cw23a20v" path="res://entities/ui/tutorial/TutorialPanel.tscn" id="5_tutorial"]
+[ext_resource type="Script" uid="uid://c7od8qxfm38p7" path="res://entities/ui/timer/GameTimer.gd" id="6_timer"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -19,6 +20,10 @@ environment = SubResource("Environment_1")
 
 [node name="BeachGenerator" type="Node2D" parent="."]
 script = ExtResource("1_beach_gen")
+
+[node name="GameTimer" type="Node" parent="."]
+script = ExtResource("6_timer")
+game_duration = 30.0
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 position = Vector2(50, 200)

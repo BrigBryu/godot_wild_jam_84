@@ -36,6 +36,10 @@ signal game_paused()
 signal game_resumed()
 # Emitted when game ends (all critters collected or player quits)
 signal game_ended(final_score: int, critters_collected: int)
+# Emitted when tutorial is completed
+signal tutorial_completed()
+# Emitted when game timer expires
+signal game_over()
 # Emitted when score changes
 signal score_changed(new_score: int, score_change: int)
 # Emitted when collection count changes

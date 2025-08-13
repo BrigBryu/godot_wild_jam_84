@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://c8xn5y4b7tutorial"]
 
-[ext_resource type="Script" path="res://game/tutorial/TutorialPanel.gd" id="1_tutorial"]
+[ext_resource type="Script" path="res://entities/ui/tutorial/TutorialPanel.gd" id="1_tutorial"]
 
 [node name="TutorialPanel" type="Control"]
 layout_mode = 3

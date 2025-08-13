@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://b4m8xjk7qwj5l"]
 
-[ext_resource type="Script" path="res://game/menu/MainMenu.gd" id="1_8m7qx"]
+[ext_resource type="Script" uid="uid://ck5qe7j70tlb5" path="res://entities/ui/menu/MainMenu.gd" id="1_8m7qx"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -47,6 +47,12 @@ size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 24
 text = "Play"
 
+[node name="SettingsButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 24
+text = "Settings"
+
 [node name="ExitButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 4
@@ -54,4 +60,5 @@ theme_override_font_sizes/font_size = 24
 text = "Exit"
 
 [connection signal="pressed" from="VBoxContainer/PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/SettingsButton" to="." method="_on_settings_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ExitButton" to="." method="_on_exit_button_pressed"]
