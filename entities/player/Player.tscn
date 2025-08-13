@@ -1,7 +1,17 @@
-[gd_scene load_steps=9 format=3 uid="uid://player_scene"]
+[gd_scene load_steps=14 format=3 uid="uid://bviq1a3p66vqg"]
 
 [ext_resource type="Texture2D" uid="uid://pgqfaavcvgmc" path="res://entities/player/art/TopDown_Demo.png" id="1_player_sprite"]
-[ext_resource type="Script" path="res://entities/player/PlayerController.gd" id="2_player_script"]
+[ext_resource type="Script" uid="uid://bphyldp563bht" path="res://entities/player/PlayerController.gd" id="2_player_script"]
+[ext_resource type="AudioStream" uid="uid://c33ltjvmttba5" path="res://stages/beach/sounds/walking_in_shallow_water_1.wav" id="3_water_sound_1"]
+[ext_resource type="AudioStream" uid="uid://dn4h1i1uhvjks" path="res://stages/beach/sounds/walking_in_shallow_water_2.wav" id="4_water_sound_2"]
+[ext_resource type="AudioStream" uid="uid://218r1rnefrgh" path="res://stages/beach/sounds/walking_in_shallow_water_3.wav" id="5_water_sound_3"]
+[ext_resource type="Shader" uid="uid://xd2gdjxt0yui" path="res://entities/player/water_tint.gdshader" id="6_water_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
+shader = ExtResource("6_water_shader")
+shader_parameter/in_water = false
+shader_parameter/water_line = 0.5
+shader_parameter/water_tint = Color(0.8, 0.9, 1, 1)
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
 radius = 4.0
@@ -9,24 +19,6 @@ height = 10.0
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_interaction"]
 radius = 30.0
-
-[sub_resource type="Animation" id="Animation_walk"]
-resource_name = "walk_left"
-length = 0.6
-loop_mode = 1
-step = 0.2
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Sprite2D:frame")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.2, 0.4),
-"transitions": PackedFloat32Array(1, 1, 1),
-"update": 1,
-"values": [62, 63, 64]
-}
 
 [sub_resource type="Animation" id="Animation_reset"]
 length = 0.001
@@ -59,6 +51,24 @@ tracks/0/keys = {
 "values": [0]
 }
 
+[sub_resource type="Animation" id="Animation_walk"]
+resource_name = "walk_left"
+length = 0.8
+loop_mode = 1
+step = 0.2
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2, 0.4, 0.6),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 1,
+"values": [62, 63, 64, 63]
+}
+
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_main"]
 _data = {
 &"RESET": SubResource("Animation_reset"),
@@ -68,20 +78,21 @@ _data = {
 
 [node name="Player" type="CharacterBody2D"]
 script = ExtResource("2_player_script")
-speed = 200.0
-interaction_distance = 30.0
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
+material = SubResource("ShaderMaterial_water")
 texture = ExtResource("1_player_sprite")
 hframes = 30
 vframes = 6
-frame = 0
+frame = 1
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+visible = false
 position = Vector2(0, 3)
 shape = SubResource("CapsuleShape2D_body")
 
 [node name="InteractionArea" type="Area2D" parent="."]
+visible = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionArea"]
 shape = SubResource("CircleShape2D_interaction")
@@ -89,14 +100,29 @@ shape = SubResource("CircleShape2D_interaction")
 [node name="Camera2D" type="Camera2D" parent="."]
 enabled = false
 zoom = Vector2(3, 3)
-position_smoothing_enabled = true
-position_smoothing_speed = 5.0
 limit_left = 0
 limit_top = 0
 limit_right = 1280
 limit_bottom = 400
+position_smoothing_enabled = true
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 libraries = {
 &"": SubResource("AnimationLibrary_main")
 }
+
+[node name="WaterSoundMain" type="AudioStreamPlayer2D" parent="."]
+stream = ExtResource("3_water_sound_1")
+max_distance = 500.0
+
+[node name="WaterSoundAlt1" type="AudioStreamPlayer2D" parent="."]
+stream = ExtResource("4_water_sound_2")
+volume_db = -6.0
+pitch_scale = 0.9
+max_distance = 500.0
+
+[node name="WaterSoundAlt2" type="AudioStreamPlayer2D" parent="."]
+stream = ExtResource("5_water_sound_3")
+volume_db = -6.0
+pitch_scale = 1.1
+max_distance = 500.0

@@ -7,15 +7,22 @@ var nearby_critters: Array = []
 var highlighted_critter: Node2D = null
 var is_in_water: bool = false
 var hint_shown: bool = false  # Track if hint is currently shown
+var last_water_sound_frame: int = -1  # Track last frame to prevent duplicate sounds
+var water_step_count: int = 0  # Track which step in the pattern we're on
+var water_pattern: Array = [1, 1, 1]  # Current 3-step pattern
 
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var interaction_area: Area2D = $InteractionArea
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
+@onready var water_sound_main: AudioStreamPlayer2D = $WaterSoundMain
+@onready var water_sound_alt1: AudioStreamPlayer2D = $WaterSoundAlt1
+@onready var water_sound_alt2: AudioStreamPlayer2D = $WaterSoundAlt2
 
 func _ready():
 	add_to_group("player")
 	setup_collision_layers()
 	setup_interaction_area()
+	setup_water_sounds()
 	print("Player ready with speed: ", speed)
 
 func setup_collision_layers():
@@ -30,6 +37,12 @@ func setup_interaction_area():
 		interaction_area.area_exited.connect(_on_critter_exited_range)
 		interaction_area.collision_layer = 0  # Area2D doesn't need to be on any layer
 		interaction_area.collision_mask = 16  # Layer 5 - Detect interactables only
+
+func setup_water_sounds():
+	# Connect to the animation player to detect frame changes
+	if animation_player:
+		# Connect to animation_started to reset frame tracking
+		animation_player.animation_started.connect(_on_animation_started)
 
 func _physics_process(delta):
 	var old_position = global_position
@@ -65,11 +78,18 @@ func check_water_collision():
 		if global_position.y > water_boundary and not is_in_water:
 			is_in_water = true
 			SignalBus.player_entered_water.emit()
-			modulate = Color(0.8, 0.9, 1.0)  # Slight blue tint when in water
+			# Update shader to show water tint on bottom half
+			if sprite and sprite.material:
+				sprite.material.set_shader_parameter("in_water", true)
+			# Reset pattern when entering water
+			water_step_count = 0
+			water_pattern = [1, 1, 1]  # Always start with pattern 1,1,1
 		elif global_position.y <= water_boundary and is_in_water:
 			is_in_water = false
 			SignalBus.player_exited_water.emit()
-			modulate = Color.WHITE
+			# Remove water tint
+			if sprite and sprite.material:
+				sprite.material.set_shader_parameter("in_water", false)
 
 func update_animation():
 	if not animation_player or not sprite:
@@ -84,10 +104,19 @@ func update_animation():
 		if animation_player.has_animation("walk_left"):
 			if animation_player.current_animation != "walk_left":
 				animation_player.play("walk_left")
+				last_water_sound_frame = -1  # Reset frame tracking when starting walk
+			
+			# Check if we should play water sound on frame 63
+			if is_in_water and sprite.frame == 63 and last_water_sound_frame != 63:
+				play_water_footstep_sound()
+				last_water_sound_frame = 63
+			elif sprite.frame != 63:
+				last_water_sound_frame = sprite.frame
 	else:
 		if animation_player.has_animation("idle"):
 			if animation_player.current_animation != "idle":
 				animation_player.play("idle")
+				last_water_sound_frame = -1  # Reset frame tracking when idle
 
 func _unhandled_input(event):
 	if event.is_action_pressed("interact"):
@@ -207,3 +236,59 @@ func remove_highlight(critter: Node2D):
 	
 	if critter.has_method("set_highlighted"):
 		critter.set_highlighted(false)
+
+func _on_animation_started(anim_name: StringName):
+	# Reset frame tracking when a new animation starts
+	last_water_sound_frame = -1
+
+func play_water_footstep_sound():
+	# Get current sound from pattern
+	var current_sound = water_pattern[water_step_count % 3]
+	
+	# Play the appropriate sound with ±5% pitch variation and quieter volume
+	if current_sound == 1:
+		if water_sound_main and water_sound_main.stream:
+			water_sound_main.pitch_scale = randf_range(0.95, 1.05)
+			water_sound_main.volume_db = randf_range(-10.0, -7.0)
+			water_sound_main.play()
+	elif current_sound == 2:
+		if water_sound_alt1 and water_sound_alt1.stream:
+			water_sound_alt1.pitch_scale = randf_range(0.95, 1.05)
+			water_sound_alt1.volume_db = randf_range(-10.0, -7.0)
+			water_sound_alt1.play()
+	elif current_sound == 3:
+		if water_sound_alt2 and water_sound_alt2.stream:
+			water_sound_alt2.pitch_scale = randf_range(0.95, 1.05)
+			water_sound_alt2.volume_db = randf_range(-10.0, -7.0)
+			water_sound_alt2.play()
+	
+	# Increment step counter
+	water_step_count += 1
+	
+	# Every 3 steps, determine the next pattern
+	if water_step_count % 3 == 0:
+		determine_next_pattern()
+
+func determine_next_pattern():
+	# Pattern probabilities:
+	# [1,1,1] = 40%
+	# [1,2,2] = 20%
+	# [2,2,2] = 10%
+	# [1,3,1] = 10%
+	# [1,2,1] = 10%
+	# [1,2,3] = 10%
+	
+	var roll = randf()
+	
+	if roll < 0.4:  # 40% chance
+		water_pattern = [1, 1, 1]
+	elif roll < 0.6:  # 20% chance
+		water_pattern = [1, 2, 2]
+	elif roll < 0.7:  # 10% chance
+		water_pattern = [2, 2, 2]
+	elif roll < 0.8:  # 10% chance
+		water_pattern = [1, 3, 1]
+	elif roll < 0.9:  # 10% chance
+		water_pattern = [1, 2, 1]
+	else:  # 10% chance
+		water_pattern = [1, 2, 3]

@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=3 uid="uid://btgfjrecu1twm"]
 
 [ext_resource type="Script" uid="uid://bjpq3656hspe7" path="res://stages/beach/BeachGenerator.gd" id="1_beach_gen"]
-[ext_resource type="PackedScene" uid="uid://derm58d30q4r3" path="res://entities/player/Player.tscn" id="3_player"]
+[ext_resource type="PackedScene" uid="uid://bviq1a3p66vqg" path="res://entities/player/Player.tscn" id="3_player"]
 [ext_resource type="PackedScene" path="res://game/hud/SimpleHUD.tscn" id="4_simple_hud"]
 [ext_resource type="PackedScene" uid="uid://dsf86cw23a20v" path="res://game/tutorial/TutorialPanel.tscn" id="5_tutorial"]
 
