@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hhoy564yxmeb"
-path="res://.godot/imported/star_fish.png-e25500820c80733e4155e8a4863f4d7c.ctex"
+uid="uid://bnxt2bcw7187q"
+path="res://.godot/imported/old_star_fish.png-800a1e539a621c0c787797c0efb7bf06.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://entities/organisms/critters/starfish/art/star_fish.png"
-dest_files=["res://.godot/imported/star_fish.png-e25500820c80733e4155e8a4863f4d7c.ctex"]
+source_file="res://entities/organisms/critters/starfish/art/old_star_fish.png"
+dest_files=["res://.godot/imported/old_star_fish.png-800a1e539a621c0c787797c0efb7bf06.ctex"]
 
 [params]
 

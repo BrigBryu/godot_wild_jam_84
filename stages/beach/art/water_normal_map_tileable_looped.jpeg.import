@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hhoy564yxmeb"
-path="res://.godot/imported/star_fish.png-e25500820c80733e4155e8a4863f4d7c.ctex"
+uid="uid://cvgnpeca8vl6x"
+path="res://.godot/imported/water_normal_map_tileable_looped.jpeg-5cbadf072001e4355e536a740505f051.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://entities/organisms/critters/starfish/art/star_fish.png"
-dest_files=["res://.godot/imported/star_fish.png-e25500820c80733e4155e8a4863f4d7c.ctex"]
+source_file="res://stages/beach/art/water_normal_map_tileable_looped.jpeg"
+dest_files=["res://.godot/imported/water_normal_map_tileable_looped.jpeg-5cbadf072001e4355e536a740505f051.ctex"]
 
 [params]
 
