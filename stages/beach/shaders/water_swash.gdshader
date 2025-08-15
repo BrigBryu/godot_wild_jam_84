@@ -33,7 +33,7 @@ void fragment(){
     // Use the computed edge position from script (single source of truth)
     float edge_y = current_edge_y;
 
-    // Wave boundaries: only show water between edge_y (top) and wave_bottom_y (bottom)
+    // Check wave boundaries - hard cutoff at top (for crisp foam), soft blend at bottom
     if (px.y < edge_y || px.y > wave_bottom_y) {
         COLOR = vec4(0.0, 0.0, 0.0, 0.0);  // Transparent outside wave boundaries
     } else {
@@ -51,8 +51,13 @@ void fragment(){
 
         vec4 final_color = mix(base_col, refr, 0.12);
         
-        // Pure dynamic wave - just apply computed alpha everywhere
-        float alpha_multiplier = computed_water_alpha;
+        // Soft blend only at the bottom edge (where wave meets ocean/sand)
+        float blend_width = 16.0;  // Pixels of soft blending at bottom edge
+        float dist_to_bottom = wave_bottom_y - px.y;
+        float bottom_fade = smoothstep(-blend_width, 0.0, dist_to_bottom);
+        
+        // Apply computed alpha with soft bottom edge blending
+        float alpha_multiplier = computed_water_alpha * bottom_fade;
         
         COLOR = vec4(final_color.rgb, final_color.a * alpha_multiplier);
     }

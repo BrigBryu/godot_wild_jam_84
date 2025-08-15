@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3 uid="uid://bwspsf6u3rlyb"]
+[gd_scene load_steps=9 format=3 uid="uid://bwspsf6u3rlyb"]
 
 [ext_resource type="Script" uid="uid://dkvh5imcow4wh" path="res://stages/beach/BeachMinimal.gd" id="1"]
 [ext_resource type="Shader" uid="uid://dw885gpwb3icr" path="res://stages/beach/shaders/water_swash.gdshader" id="2"]
 [ext_resource type="Shader" uid="uid://c0yp8b0x1vwx4" path="res://stages/beach/shaders/foam_edge.gdshader" id="3"]
 [ext_resource type="Texture2D" uid="uid://c4np5cfdthqsd" path="res://stages/tilesets/sand_tile_full_16by16.png" id="4_7edi6"]
 [ext_resource type="Script" uid="uid://b78n6udkgwohh" path="res://stages/beach/ShorelineDebug.gd" id="5_debug"]
+[ext_resource type="Script" uid="uid://cm3r4e7mfn7fe" path="res://stages/beach/CritterSpawner.gd" id="6_critter_spawner"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_Water"]
 shader = ExtResource("2")
@@ -58,5 +59,11 @@ material = SubResource("ShaderMaterial_Foam")
 centered = false
 
 [node name="ShorelineDebug" type="Node2D" parent="."]
+visible = false
 z_index = 100
 script = ExtResource("5_debug")
+
+[node name="CritterSpawner" type="Node2D" parent="."]
+script = ExtResource("6_critter_spawner")
+spawn_chance = 1.0
+spawn_count_range = Vector2i(2, 2)

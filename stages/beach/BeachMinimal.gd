@@ -4,15 +4,16 @@ extends Node2D
 @onready var ocean     : Sprite2D = $Ocean      # Static ocean background
 @onready var wave      : Sprite2D = $Wave       # Dynamic wave (can spawn anywhere)
 @onready var foam      : Sprite2D = $Foam       # Foam on the wave
-@onready var debug     : Node2D = $ShorelineDebug
+# Debug node disabled for production
+# @onready var debug     : Node2D = $ShorelineDebug
 
 @export var shore_y: float = 420.0  # baseline shoreline position  
 @export var Rmax: float = 120.0   # max run-up distance for natural waves
 @export var w: float = 0.45
 @export var k: float = 0.0
 @export var lock_vertical: bool = true
-@export var wave_front: Color = Color(0.08, 0.55, 0.62, 0.95)  # Front edge of wave (lighter blue-green)
-@export var wave_tail: Color  = Color(0.05, 0.45, 0.58, 0.95)  # Tail edge of wave (slightly darker blue-green)
+@export var wave_front: Color = Color(0.08, 0.55, 0.62, 0.85)  # Front edge of wave (lighter blue-green, more transparent)
+@export var wave_tail: Color  = Color(0.04, 0.42, 0.56, 0.98)  # Tail edge of wave (darker blue-green, less transparent)
 @export var refract_strength: float = 0.006
 @export var foam_edge_width: float = 12.0
 @export var crest_offset: float = 7.0
@@ -22,17 +23,44 @@ extends Node2D
 @export var normalB_path: String = "res://stages/beach/art/water_normal_map_tileable_looped_more_wavy.jpeg"
 @export var foamNoise_path: String = "res://stages/beach/art/foam.jpg"
 
-# Wave State System
-enum WaveState { ON_BEACH, ON_OCEAN }
-@export var wave_state: WaveState = WaveState.ON_OCEAN
-@export var ocean_wave_height: float = 100.0  # Fixed height for ocean waves
-@export var wave_speed_multiplier: float = 1.0  # Controls wave travel speed (affects shore height)
+# Simple Speed-based Wave System
+@export_group("Wave Properties")
+@export var wave_height: float = 100.0  # Wave height in pixels
+@export var wave_speed: float = 110.0   # Base wave speed in pixels/second
+@export var surge_multiplier: float = 1.4  # How much wave speed affects surge height (physics-based)
 
-# Physics-based ocean wave system
-@export var physics_wave_enabled: bool = true
-var ocean_wave_scene = preload("res://stages/beach/OceanWave.tscn")
-var current_physics_wave: RigidBody2D = null
-var physics_wave_active: bool = false
+@export_group("Wave Randomization")
+@export var speed_randomization: bool = true  # Enable random wave speeds
+@export var speed_variation_range: Vector2 = Vector2(0.7, 1.5)  # Min/max speed multipliers (70% to 150%)
+
+# Critter spawner (replaces old starfish system)
+@onready var critter_spawner: CritterSpawner = $CritterSpawner
+
+# Single wave state
+var wave_position_y: float = 0.0     # Current Y position of wave bottom
+var wave_phase: String = "calm"      # "calm", "traveling", "surging", "retreating"
+var wave_phase_progress: float = 0.0 # Progress within current phase (0.0 to 1.0)
+var wave_edge_y: float = 420.0       # Current wave edge (top) position
+var wave_alpha: float = 0.15         # Wave transparency
+var wave_foam_alpha: float = 0.15    # Foam transparency
+
+# Current wave's randomized properties
+var current_wave_speed: float = 110.0    # This wave's speed (randomized)
+var current_wave_height: float = 100.0   # This wave's height (calculated from speed)
+var critters_spawned_this_wave: bool = false  # Track if critters spawned to prevent double-spawning
+var actual_peak_y: float = 0.0  # Store where wave actually peaked for retreat
+var pause_timer: float = 0.0  # Timer for pause at peak
+
+# Wave signals
+signal wave_reached_peak(wave_rectangle: Rect2)
+
+# Physics-based surge motion
+var surge_velocity: float = 0.0          # Current surge velocity (pixels/second)
+var surge_initial_velocity: float = 0.0  # Initial velocity when surge starts
+var surge_deceleration: float = 0.0      # Constant deceleration rate
+
+# Wave timing
+var next_wave_time: float = 3.0      # When to spawn next wave
 
 func _ready():
 	# --- Setup sand tiling with Sprite2D ---
@@ -77,14 +105,20 @@ func _ready():
 	_setup_shader_sprite(wave, transparent_tex, vp_size)
 	_setup_shader_sprite(foam, transparent_tex, vp_size)
 
-	# --- Wave shader uniforms (dynamic wave only) ---
+	# --- Initialize shader parameters ---
 	var wmat := wave.material as ShaderMaterial
-	wmat.set_shader_parameter("rect_size", vp_size)
-	wmat.set_shader_parameter("shore_y", shore_y)
-	wmat.set_shader_parameter("Rmax", Rmax)
-	wmat.set_shader_parameter("w", w)
-	wmat.set_shader_parameter("k", k)
-	wmat.set_shader_parameter("lock_vertical", lock_vertical)
+	var fmat := foam.material as ShaderMaterial
+	
+	# Set static shader parameters
+	for m in [wmat, fmat]:
+		m.set_shader_parameter("rect_size", vp_size)
+		m.set_shader_parameter("shore_y", shore_y)
+		m.set_shader_parameter("Rmax", get_computed_surge_height())
+		m.set_shader_parameter("w", w)
+		m.set_shader_parameter("k", k)
+		m.set_shader_parameter("lock_vertical", lock_vertical)
+	
+	# Wave-specific parameters
 	wmat.set_shader_parameter("wave_front", wave_front)
 	wmat.set_shader_parameter("wave_tail", wave_tail)
 	wmat.set_shader_parameter("refract_strength", refract_strength)
@@ -92,346 +126,315 @@ func _ready():
 	var normalB := load(normalB_path) if normalB_path != "" else null
 	if normalA: wmat.set_shader_parameter("normalA", normalA)
 	if normalB: wmat.set_shader_parameter("normalB", normalB)
-
-	# --- Foam uniforms ---
-	var fmat := foam.material as ShaderMaterial
-	fmat.set_shader_parameter("rect_size", vp_size)
-	fmat.set_shader_parameter("shore_y", shore_y)
-	fmat.set_shader_parameter("Rmax", Rmax)
-	fmat.set_shader_parameter("w", w)
-	fmat.set_shader_parameter("k", k)
-	fmat.set_shader_parameter("lock_vertical", lock_vertical)
+	
+	# Foam-specific parameters
 	fmat.set_shader_parameter("edge_width", foam_edge_width)
 	fmat.set_shader_parameter("crest_offset", crest_offset)
 	fmat.set_shader_parameter("foam_alpha", foam_alpha)
 	var foamNoise := load(foamNoise_path) if foamNoise_path != "" else null
 	if foamNoise: fmat.set_shader_parameter("foamNoise", foamNoise)
+	
+	# Initialize single wave system
+	wave_position_y = shore_y
+	wave_edge_y = shore_y
+	wave_phase = "calm"
+	next_wave_time = 3.0  # First wave in 3 seconds
 
 	get_viewport().size_changed.connect(_on_size_changed)
+	
+	# Connect wave signal to spawner via beach mediation
+	wave_reached_peak.connect(_on_wave_reached_peak)
 
-func _process(_dt):
-	# Calculate ALL wave properties using time-based system (single source of truth)
-	var time = Time.get_ticks_msec() / 1000.0
-	var cycle_time = fmod(time, _total_cycle_time)
+func _process(delta: float):
+	# Handle wave timing
+	next_wave_time -= delta
 	
-	# Update wave based on current state
-	if wave_state == WaveState.ON_BEACH:
-		_update_beach_wave(cycle_time)
-	else:  # ON_OCEAN
-		_update_simple_ocean_wave(cycle_time)
+	# Update single wave
+	_update_single_wave(delta)
 	
-	# Update shaders with computed edge position
+	# Critters are now permanent - no need for visibility updates or cleanup
+	
+	# Set shader values directly from single wave
+	_current_edge_y = wave_edge_y
+	_current_wave_alpha = wave_alpha
+	_current_foam_alpha = wave_foam_alpha
+	_current_wave_bottom_y = wave_position_y
+	
+	# Update shaders with computed wave properties
 	_update_shader_parameters()
 	
-	# Sync debug visualization
-	if debug:
-		debug.shore_y = shore_y
-		debug.Rmax = Rmax
-		debug.w = w
-		debug.k = k
-		debug.lock_vertical = lock_vertical
-		debug._current_edge_y = _current_edge_y  # Pass computed edge to debug
+	# Sync debug visualization (disabled for production)
+	# if debug:
+	#	debug.shore_y = shore_y
+	#	debug.Rmax = surge_height
+	#	debug.w = w
+	#	debug.k = k
+	#	debug.lock_vertical = lock_vertical
+	#	debug._current_edge_y = _current_edge_y
 
 # Cache previous values to avoid unnecessary shader updates
 var _prev_shore_y: float = -1
-var _prev_Rmax: float = -1
+var _prev_surge_height: float = -1
 var _prev_w: float = -1
 
-# Single source of truth for wave timing
+# Current wave state for shader display
 var _current_edge_y: float = 420.0
-var _current_phase: float = 0.0
 var _current_foam_alpha: float = 1.0
 var _current_wave_alpha: float = 1.0
+var _current_wave_bottom_y: float = 420.0
 
-# Wave State System
-var _current_wave_bottom_y: float = 420.0  # Bottom edge of wave
+# ============================================================================
+# SIMPLE SINGLE WAVE SYSTEM
+# ============================================================================
 
-# Track actual surge end position for seamless retreat
-var _actual_surge_end_position: float = 420.0
+func _update_single_wave(delta: float):
+	match wave_phase:
+		"calm":
+			_update_calm_phase(delta)
+		"traveling":
+			_update_traveling_phase(delta)
+		"surging":
+			_update_surging_phase(delta)
+		"pausing":
+			_update_pausing_phase(delta)
+		"retreating":
+			_update_retreating_phase(delta)
 
-# TIME-BASED WAVE TIMING (much clearer!)
-const UPRUSH_TIME = 1.0      # seconds to reach peak
-const PEAK_HOLD_TIME = 0.3   # seconds at peak
-const BACKWASH_TIME = 2.5    # seconds to retreat to baseline (slower!)
-const CALM_TIME = 3.0        # seconds between waves
+func _update_calm_phase(delta: float):
+	# Wait for next wave
+	if next_wave_time <= 0.0:
+		# Randomize wave properties for this new wave
+		_randomize_wave_properties()
+		
+		# Start new wave off-screen
+		var viewport_height = get_viewport_rect().size.y
+		wave_position_y = viewport_height + current_wave_height * 1.5
+		wave_edge_y = wave_position_y - current_wave_height
+		wave_phase = "traveling"
+		wave_phase_progress = 0.0
+		wave_alpha = 1.0
+		wave_foam_alpha = 1.0
+		critters_spawned_this_wave = false  # Reset for new wave
+		next_wave_time = 8.0  # Next wave in 8 seconds after this one completes
 
-var _total_cycle_time = UPRUSH_TIME + PEAK_HOLD_TIME + BACKWASH_TIME + CALM_TIME
-
-# SINGLE SOURCE OF TRUTH: All wave behavior computed here
-func runup_from_time(cycle_time: float, R: float) -> float:
-	if cycle_time < UPRUSH_TIME:
-		# Uprush phase with slight deceleration as wave climbs higher
-		var t = cycle_time / UPRUSH_TIME
-		return pow(t, 0.8) * R  # Changed from 0.6 to 0.8 for more deceleration
-	elif cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME:
-		# Peak hold phase
-		return R
-	elif cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME + BACKWASH_TIME:
-		# Backwash phase (slower retreat)
-		var t = (cycle_time - UPRUSH_TIME - PEAK_HOLD_TIME) / BACKWASH_TIME
-		return (1.0 - pow(t, 1.2)) * R
+func _update_traveling_phase(delta: float):
+	# Realistic wave physics: smooth speed changes based on water depth
+	var distance_to_shore = wave_position_y - shore_y
+	var current_speed: float
+	
+	# Create smooth speed curve using smoothstep for natural deceleration
+	if distance_to_shore > 300.0:
+		# Far from shore - full speed
+		current_speed = current_wave_speed * 1.5
 	else:
-		# Calm phase
-		return 0.0
+		# Smooth transition from fast (300px away) to slow (0px at shore)
+		var distance_factor = clamp(distance_to_shore / 300.0, 0.0, 1.0)  # 1.0 to 0.0
+		# Use smoothstep for natural curve (fast -> gradual slowdown -> slower at end)
+		var speed_curve = smoothstep(0.0, 1.0, distance_factor)
+		# Speed ranges from 0.7x (at shore) to 1.5x (far from shore)
+		current_speed = current_wave_speed * lerp(0.7, 1.5, speed_curve)
+	
+	# Move wave toward shore
+	var old_pos = wave_position_y
+	wave_position_y -= current_speed * delta
+	wave_edge_y = wave_position_y - current_wave_height
+	
+	# Check if wave has reached shore
+	if wave_position_y <= shore_y:
+		wave_phase = "surging"
+		wave_phase_progress = 0.0
+		wave_position_y = shore_y  # Lock to shore
+		wave_edge_y = shore_y - current_wave_height  # Start surge from here
+		
+		# Initialize surge physics - transition from ocean velocity to deceleration on sand
+		print("Wave transitioned to sand - will decelerate from velocity: ", current_wave_speed)
 
-func get_foam_alpha_from_time(cycle_time: float) -> float:
-	if cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME:
-		# Full strength during uprush and peak
-		return 1.0
-	elif cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME + BACKWASH_TIME:
-		# Fade during backwash
-		var t = (cycle_time - UPRUSH_TIME - PEAK_HOLD_TIME) / BACKWASH_TIME
-		return lerp(1.0, 0.3, t)
+func _update_surging_phase(delta: float):
+	# PURE PHYSICS - Only velocity and negative acceleration until natural stop
+	
+	# Simple physics: position = position + velocity * time, velocity = velocity + acceleration * time
+	var acceleration = 200.0  # Constant positive acceleration (slows down upward movement)
+	
+	# Move wave edge by current velocity (negative velocity = upward movement)
+	wave_edge_y += (-current_wave_speed) * delta
+	
+	# Apply acceleration to slow down the upward movement
+	current_wave_speed -= acceleration * delta
+	
+	# Natural physics stop when velocity reaches zero
+	if current_wave_speed <= 0:
+		current_wave_speed = 0
+		
+		# Store actual peak position for retreat
+		actual_peak_y = wave_edge_y
+		
+		# Emit signal with actual wave rectangle at peak
+		var wave_rect = _get_wave_rectangle()
+		if not critters_spawned_this_wave:
+			critters_spawned_this_wave = true
+			wave_reached_peak.emit(wave_rect)
+			print("Wave reached natural peak at: ", wave_edge_y, " emitting rectangle: ", wave_rect)
+		
+		wave_phase = "pausing"
+		pause_timer = 0.5  # Pause for half second at peak
+		wave_phase_progress = 0.0
+		return
+	
+	# Simple foam fade as wave slows down
+	var speed_factor = current_wave_speed / wave_speed  # 1.0 to 0.0
+	wave_foam_alpha = lerp(0.3, 1.0, speed_factor)
+
+func _update_pausing_phase(delta: float):
+	# Pause at peak for a moment
+	pause_timer -= delta
+	
+	# Keep wave stationary at peak
+	wave_edge_y = actual_peak_y
+	
+	# Gentle foam animation during pause
+	wave_foam_alpha = 0.7 + 0.2 * sin(Time.get_time_dict_from_system()["second"] * 3.0)
+	
+	if pause_timer <= 0.0:
+		wave_phase = "retreating"
+		wave_phase_progress = 0.0
+		print("Wave starting retreat from pause at: ", actual_peak_y)
+
+func _update_retreating_phase(delta: float):
+	# Calculate retreat progress (slower - takes 4 seconds to complete)
+	var retreat_duration = 4.0  # Slower retreat after pause
+	wave_phase_progress += delta / retreat_duration
+	
+	if wave_phase_progress >= 1.0:
+		wave_phase = "calm"
+		wave_phase_progress = 0.0
+		wave_edge_y = shore_y
+		wave_alpha = 0.15
+		wave_foam_alpha = 0.15
+		return
+	
+	# Smooth retreat movement (from actual peak back to shore)
+	var retreat_factor = pow(wave_phase_progress, 1.2)
+	# Use the stored actual peak position where the wave naturally stopped
+	var retreat_start_y = actual_peak_y  # Actual peak position from physics
+	var retreat_end_y = shore_y  # Shore baseline
+	wave_edge_y = lerp(retreat_start_y, retreat_end_y, retreat_factor)
+	
+	# Fade out during retreat
+	wave_alpha = lerp(1.0, 0.15, wave_phase_progress)
+	wave_foam_alpha = lerp(1.0, 0.0, wave_phase_progress * 1.5)
+
+# ============================================================================
+# WAVE RANDOMIZATION
+# ============================================================================
+
+func _randomize_wave_properties():
+	"""Randomize wave speed and calculate corresponding height"""
+	if speed_randomization:
+		# Randomize wave speed
+		var speed_multiplier = randf_range(speed_variation_range.x, speed_variation_range.y)
+		current_wave_speed = wave_speed * speed_multiplier
+		
+		# Calculate wave height based on speed (faster waves = taller waves)
+		# Using physics relationship where height is related to wave energy/speed
+		current_wave_height = wave_height * speed_multiplier
+		
+		print("New wave: Speed=", current_wave_speed, " (", speed_multiplier, "x), Height=", current_wave_height, " (calculated from speed)")
 	else:
-		# Very faint during calm period
-		return 0.15
+		# Use base values
+		current_wave_speed = wave_speed
+		current_wave_height = wave_height
 
-func get_wave_alpha_from_time(cycle_time: float) -> float:
-	if cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME:
-		# Full strength during uprush and peak
-		return 1.0
-	elif cycle_time < UPRUSH_TIME + PEAK_HOLD_TIME + BACKWASH_TIME:
-		# Fade during backwash
-		var t = (cycle_time - UPRUSH_TIME - PEAK_HOLD_TIME) / BACKWASH_TIME
-		return lerp(1.0, 0.15, t)  # Fade to subtle visibility
+func _get_wave_rectangle() -> Rect2:
+	"""Get the actual wave rectangle at current position"""
+	var viewport_width = get_viewport_rect().size.x
+	var spawn_padding = 20.0  # Small padding from edges
+	
+	return Rect2(
+		spawn_padding,
+		wave_edge_y,
+		viewport_width - (spawn_padding * 2),
+		shore_y - wave_edge_y
+	)
+
+func _on_wave_reached_peak(wave_rectangle: Rect2):
+	"""Beach mediates between wave signal and spawner"""
+	if critter_spawner and critter_spawner.has_method("spawn_critters_in_rectangle"):
+		critter_spawner.spawn_critters_in_rectangle(wave_rectangle)
 	else:
-		# Subtle during calm period
-		return 0.15
+		print("Warning: CritterSpawner doesn't have spawn_critters_in_rectangle method")
 
-# Wave State Functions
-func _update_beach_wave(cycle_time: float):
-	# Original beach wave logic - wave drags up from shore baseline
-	var r = runup_from_time(cycle_time, Rmax)
-	_current_edge_y = shore_y - r
-	_current_phase = cycle_time / _total_cycle_time
-	_current_foam_alpha = get_foam_alpha_from_time(cycle_time)
-	_current_wave_alpha = get_wave_alpha_from_time(cycle_time)
-	_current_wave_bottom_y = shore_y  # Bottom always at shore baseline
+# ============================================================================
+# PHYSICS-BASED SURGE CALCULATION
+# ============================================================================
 
-func _update_ocean_wave(cycle_time: float):
-	# Ocean wave - three distinct phases: travel → slow down → retreat
-	var viewport_height = get_viewport_rect().size.y
+func get_computed_surge_height() -> float:
+	# Physics-based surge height calculation using current wave's properties
+	# Based on wave energy: E = 0.5 * speed^2 (simplified)
+	# Faster waves have more energy and surge higher up the beach
+	var base_surge = current_wave_speed * surge_multiplier
 	
-	# Calculate ocean spawn position and shore height - start well off-screen
-	var ocean_spawn_y = viewport_height + ocean_wave_height  # Start below viewport bottom
-	var wave_speed = clamp(wave_speed_multiplier, 0.1, 3.0)  # Prevent extreme speeds
-	var computed_shore_height = _calculate_shore_height_from_speed(wave_speed)
+	# Add wave height influence (bigger waves surge higher)
+	var height_factor = current_wave_height / 100.0  # Normalize to 100px baseline
 	
-	# Three phase timing
-	var travel_time = UPRUSH_TIME * 3.0  # Ocean travel phase (slower for more dramatic effect)
-	var slowdown_time = PEAK_HOLD_TIME * 2.0  # Slowing down and surging phase
-	var retreat_time = BACKWASH_TIME  # Use existing retreat logic
+	# Final surge height with realistic limits
+	var computed_surge = base_surge * height_factor
 	
-	if cycle_time < travel_time:
-		# Phase 1: TRAVELING - Ocean wave moving toward shore
-		var travel_progress = cycle_time / travel_time
-		
-		# Calculate base wave positions
-		_current_wave_bottom_y = lerp(ocean_spawn_y, shore_y, travel_progress)
-		var base_edge_y = _current_wave_bottom_y - ocean_wave_height
-		
-		# Calculate how close the water edge is to shore (smooth transition zone)
-		var distance_to_shore = shore_y - base_edge_y
-		var shore_approach_distance = ocean_wave_height * 0.8  # Start transition when edge is close
-		
-		if distance_to_shore <= shore_approach_distance:
-			# Entering shore influence zone - gradual surge begins
-			var approach_progress = clamp(1.0 - (distance_to_shore / shore_approach_distance), 0.0, 1.0)
-			
-			# Smooth surge curve that starts gently and builds up
-			var smooth_surge_factor = smoothstep(0.0, 1.0, approach_progress)
-			var surge_amount = smooth_surge_factor * computed_shore_height * 0.4  # Up to 40% early surge
-			
-			_current_edge_y = base_edge_y - surge_amount
-		else:
-			# Normal traveling wave - no surge yet
-			_current_edge_y = base_edge_y
-		
-		# Full strength ocean wave
-		_current_wave_alpha = 1.0
-		_current_foam_alpha = 1.0
-		
-	elif cycle_time < travel_time + slowdown_time:
-		# Phase 2: SLOWING_DOWN - Wave has reached shore, gradual transition to surge
-		_current_wave_bottom_y = shore_y  # Bottom locked at shore
-		
-		var slowdown_cycle_time = cycle_time - travel_time
-		var surge_progress = slowdown_cycle_time / slowdown_time
-		
-		# Gentler transition - start from where the traveling wave left off
-		var travel_end_position = shore_y - ocean_wave_height  # Where traveling phase ended
-		var target_surge_position = shore_y - computed_shore_height  # Where we want to end up
-		
-		# Use a gentler curve for more natural transition
-		var gentle_curve = pow(surge_progress, 0.8)  # Slightly less dramatic than smoothstep
-		_current_edge_y = lerp(travel_end_position, target_surge_position, gentle_curve)
-		
-		# Maintain full strength during surge
-		_current_wave_alpha = 1.0
-		_current_foam_alpha = 1.0
-		
-	else:
-		# Phase 3: RETREATING - Use existing retreat logic (encapsulated and working great!)
-		_current_wave_bottom_y = shore_y  # Bottom locked at shore
-		
-		var retreat_cycle_time = cycle_time - travel_time - slowdown_time
-		var retreat_progress = clamp(retreat_cycle_time / retreat_time, 0.0, 1.0)
-		
-		# Use the same retreat math as the working beach wave system
-		var retreat_amount = pow(retreat_progress, 1.2) * computed_shore_height
-		_current_edge_y = shore_y - computed_shore_height + retreat_amount
-		
-		# Use the same alpha fade as the working beach wave system
-		_current_wave_alpha = lerp(1.0, 0.15, retreat_progress)
-		_current_foam_alpha = lerp(1.0, 0.3, retreat_progress)
-		
-		# Handle calm phase
-		if retreat_cycle_time > retreat_time:
-			_current_edge_y = shore_y
-			_current_wave_alpha = 0.15
-			_current_foam_alpha = 0.15
-	
-	_current_phase = cycle_time / _total_cycle_time
+	# Clamp to reasonable range (minimum 60px, maximum 350px - higher max for big waves)
+	return clamp(computed_surge, 60.0, 350.0)
 
-# Simple ocean wave - travel to shore, then use beach wave logic
-func _update_simple_ocean_wave(cycle_time: float):
-	var computed_shore_height = _calculate_shore_height_from_speed(wave_speed_multiplier)
-	var viewport_height = get_viewport_rect().size.y
-	var ocean_spawn_y = viewport_height + ocean_wave_height  # Start below viewport bottom
-	
-	# Split into two simple phases: travel then beach behavior
-	var travel_time = UPRUSH_TIME * 2.5  # Time to travel from ocean to shore (slower)
-	var beach_behavior_time = _total_cycle_time - travel_time  # Remaining time for beach behavior
-	
-	if cycle_time < travel_time:
-		# Phase 1: Simple linear travel from ocean spawn to shore
-		var travel_progress = cycle_time / travel_time
-		_current_wave_bottom_y = lerp(ocean_spawn_y, shore_y, travel_progress)
-		_current_edge_y = _current_wave_bottom_y - ocean_wave_height
-		
-		_current_wave_alpha = 1.0
-		_current_foam_alpha = 1.0
-		
-		if Engine.get_process_frames() % 60 == 0:
-			print("TRAVEL PHASE - progress: ", "%.2f" % travel_progress, ", edge_y: ", "%.1f" % _current_edge_y)
-		
-	else:
-		# Phase 2: Use beach wave logic BUT start from where travel ended
-		_current_wave_bottom_y = shore_y
-		
-		# Calculate where travel phase ended
-		var travel_end_edge_y = shore_y - ocean_wave_height
-		
-		# Adjust cycle time for beach behavior (start from 0 when hitting shore)
-		var beach_cycle_time = cycle_time - travel_time
-		
-		# Use the proven beach wave runup function
-		var r = runup_from_time(beach_cycle_time, computed_shore_height)
-		
-		# Calculate target positions
-		var surge_peak_y = travel_end_edge_y - computed_shore_height  # Highest point wave reaches
-		var current_surge_y = travel_end_edge_y - r  # Current position from runup function
-		
-		# Smooth interpolation to ensure wave reaches shore baseline
-		if beach_cycle_time >= UPRUSH_TIME + PEAK_HOLD_TIME + BACKWASH_TIME:
-			# Calm phase - ensure we're exactly at shore baseline
-			_current_edge_y = shore_y
-		elif beach_cycle_time >= UPRUSH_TIME + PEAK_HOLD_TIME:
-			# Backwash phase - smooth retreat from current position toward shore
-			var backwash_time = beach_cycle_time - UPRUSH_TIME - PEAK_HOLD_TIME
-			var backwash_progress = backwash_time / BACKWASH_TIME
-			
-			# Calculate where we should be based on smooth retreat
-			var retreat_start_y = travel_end_edge_y - computed_shore_height  # Peak position
-			var smooth_retreat_y = lerp(retreat_start_y, shore_y, pow(backwash_progress, 1.2))
-			
-			_current_edge_y = smooth_retreat_y
-		else:
-			# Uprush and peak phases - use normal runup calculation
-			_current_edge_y = current_surge_y
-		
-		# Aggressive foam fade during retreat
-		if beach_cycle_time >= UPRUSH_TIME + PEAK_HOLD_TIME:
-			# During backwash - foam fades quickly based on retreat progress
-			var backwash_time = beach_cycle_time - UPRUSH_TIME - PEAK_HOLD_TIME
-			var backwash_progress = clamp(backwash_time / BACKWASH_TIME, 0.0, 1.0)
-			
-			# Aggressive fade: mostly gone at 50% retreat, completely gone at 100%
-			if backwash_progress < 0.5:
-				# First half of retreat: fade from 1.0 to 0.1 (mostly gone)
-				_current_foam_alpha = lerp(1.0, 0.1, backwash_progress * 2.0)
-			else:
-				# Second half of retreat: fade from 0.1 to 0.0 (completely gone)
-				_current_foam_alpha = lerp(0.1, 0.0, (backwash_progress - 0.5) * 2.0)
-		else:
-			# During uprush and peak - full foam visibility
-			_current_foam_alpha = 1.0
-		
-		# Water stays visible until it reaches shore baseline
-		if _current_edge_y >= shore_y:
-			# Wave has retreated to shore - water can fade
-			_current_wave_alpha = get_wave_alpha_from_time(beach_cycle_time)
-		else:
-			# Wave is still above shore - keep water fully visible
-			_current_wave_alpha = 1.0
-		
-		if Engine.get_process_frames() % 60 == 0:
-			print("BEACH PHASE - beach_time: ", "%.2f" % beach_cycle_time, ", travel_end: ", "%.1f" % travel_end_edge_y, ", runup: ", "%.1f" % r, ", edge_y: ", "%.1f" % _current_edge_y)
-	
-	_current_phase = cycle_time / _total_cycle_time
+# ============================================================================
+# CRITTER SPAWNING SYSTEM (Now handled by CritterSpawner)
+# ============================================================================
 
-# Calculate shore height based on wave speed using realistic wave physics
-func _calculate_shore_height_from_speed(speed: float) -> float:
-	# Based on shallow water wave theory: run-up height increases with wave speed
-	# Formula inspired by: R = H * sqrt(speed) where R is run-up, H is base height
-	
-	var base_height = Rmax  # Use the base Rmax as reference
-	
-	# Speed-to-height relationship (non-linear for realism)
-	var speed_factor: float
-	if speed <= 0.5:
-		# Very slow waves - minimal shore height
-		speed_factor = speed * 0.4
-	elif speed <= 1.0:
-		# Normal speed waves - linear relationship
-		speed_factor = 0.2 + (speed - 0.5) * 1.6  # Maps 0.5-1.0 to 0.2-1.0
-	elif speed <= 2.0:
-		# Fast waves - enhanced height with square root scaling
-		var excess_speed = speed - 1.0
-		speed_factor = 1.0 + sqrt(excess_speed) * 0.8  # Gradual increase for fast waves
-	else:
-		# Very fast waves - diminishing returns (wave breaks before reaching shore)
-		var excess_speed = speed - 2.0
-		speed_factor = 1.8 + excess_speed * 0.2  # Slower increase for very fast waves
-	
-	# Apply ocean wave height influence (bigger ocean waves = bigger shore surge)
-	var wave_height_factor = ocean_wave_height / 100.0  # Normalize to 100px baseline
-	
-	# Final computed height with realistic constraints
-	var computed_height = base_height * speed_factor * wave_height_factor
-	
-	# Clamp to reasonable limits (prevent unrealistic extremes)
-	return clamp(computed_height, base_height * 0.1, base_height * 3.0)
+# ============================================================================
+# PUBLIC API - Simple wave control
+# ============================================================================
+
+# Trigger a new wave immediately
+func trigger_wave():
+	if wave_phase == "calm":
+		next_wave_time = 0.0  # Start immediately
+
+# Get current wave info
+func get_wave_info() -> Dictionary:
+	return {
+		"phase": wave_phase,
+		"progress": wave_phase_progress,
+		"edge_y": wave_edge_y,
+		"position_y": wave_position_y,
+		"alpha": wave_alpha,
+		"foam_alpha": wave_foam_alpha
+	}
+
+# Reset to calm state
+func reset_wave():
+	wave_phase = "calm"
+	wave_phase_progress = 0.0
+	wave_edge_y = shore_y
+	wave_alpha = 0.15
+	wave_foam_alpha = 0.15
+	next_wave_time = 3.0
 
 func _update_shader_parameters():
 	# Pass the computed wave properties to shaders (single source of truth)
-	var wmat := wave.material as ShaderMaterial  # Now using 'wave'
+	var wmat := wave.material as ShaderMaterial
 	var fmat := foam.material as ShaderMaterial
 	
 	# Set the computed wave properties to shaders
 	wmat.set_shader_parameter("current_edge_y", _current_edge_y)
-	wmat.set_shader_parameter("computed_water_alpha", _current_wave_alpha)  # Wave fades to 0.15
-	wmat.set_shader_parameter("wave_bottom_y", _current_wave_bottom_y)  # Wave bottom boundary
+	wmat.set_shader_parameter("computed_water_alpha", _current_wave_alpha)
+	wmat.set_shader_parameter("wave_bottom_y", _current_wave_bottom_y)
 	fmat.set_shader_parameter("current_edge_y", _current_edge_y)
-	fmat.set_shader_parameter("computed_foam_alpha", _current_foam_alpha)  # Foam fades to 0.15
-	fmat.set_shader_parameter("wave_bottom_y", _current_wave_bottom_y)  # Wave bottom boundary
+	fmat.set_shader_parameter("computed_foam_alpha", _current_foam_alpha)
+	fmat.set_shader_parameter("wave_bottom_y", _current_wave_bottom_y)
 	
-	# Only update other parameters when they change
-	var needs_update = (_prev_shore_y != shore_y or _prev_Rmax != Rmax or _prev_w != w)
+	# Only update other parameters when they change  
+	var computed_surge = get_computed_surge_height()
+	var needs_update = (_prev_shore_y != shore_y or _prev_surge_height != computed_surge or _prev_w != w)
 	if needs_update:
 		for m in [wmat, fmat]:
 			m.set_shader_parameter("shore_y", shore_y)
-			m.set_shader_parameter("Rmax", Rmax)
+			m.set_shader_parameter("Rmax", computed_surge)  # Use computed surge height
 			m.set_shader_parameter("w", w)
 			m.set_shader_parameter("k", k)
 			m.set_shader_parameter("lock_vertical", lock_vertical)
@@ -449,7 +452,7 @@ func _update_shader_parameters():
 		
 		# Cache values
 		_prev_shore_y = shore_y
-		_prev_Rmax = Rmax
+		_prev_surge_height = computed_surge
 		_prev_w = w
 
 # Helper functions for cleaner code
@@ -480,7 +483,7 @@ func _on_size_changed():
 		s.scale = vp_size
 	
 	# Update shader parameters
-	var wmat := wave.material as ShaderMaterial  # Now using 'wave'
+	var wmat := wave.material as ShaderMaterial
 	var fmat := foam.material as ShaderMaterial
 	wmat.set_shader_parameter("rect_size", vp_size)
 	fmat.set_shader_parameter("rect_size", vp_size)

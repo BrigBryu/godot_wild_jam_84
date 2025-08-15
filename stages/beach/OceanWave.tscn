@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://bvv8mf2x3e8rl"]
 
-[ext_resource type="Script" path="res://stages/beach/OceanWave.gd" id="1"]
+[ext_resource type="Script" uid="uid://c8ywsrs0yv68x" path="res://stages/beach/OceanWave.gd" id="1"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
 size = Vector2(1280, 100)

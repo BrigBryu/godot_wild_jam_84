@@ -9,8 +9,9 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
 shader = ExtResource("6_water_shader")
+shader_parameter/hframes = 30
+shader_parameter/vframes = 6
 shader_parameter/in_water = false
-shader_parameter/water_line = 0.5
 shader_parameter/water_tint = Color(0.8, 0.9, 1, 1)
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
