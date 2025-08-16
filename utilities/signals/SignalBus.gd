@@ -6,10 +6,10 @@ extends Node
 # === PLAYER SIGNALS ===
 # Emitted when player position changes (for camera, minimap, etc.)
 signal player_moved(new_position: Vector2)
-# Emitted when player enters water
+# Water signals restored with new architecture
 signal player_entered_water()
-# Emitted when player exits water  
 signal player_exited_water()
+signal wave_area_ready(wave_area: Area2D)  # Can't use custom class type in signal
 # Emitted when player interacts (presses E)
 signal player_interaction_attempted()
 
@@ -72,6 +72,8 @@ signal stage_generation_completed(critter_count: int)
 signal stage_transition_started(new_stage: String)
 # Emitted when stage transition completes
 signal stage_transition_completed()
+# Wave signal kept for spawning but will be reworked
+signal wave_peak_reached(spawn_rectangle: Rect2)
 
 # === DEBUG SIGNALS ===
 # Emitted when debug mode is toggled
@@ -84,10 +86,6 @@ signal debug_info_updated(info: Dictionary)
 signal settings_changed(setting_key: String, new_value)
 # Emitted when audio volume changes
 signal audio_volume_changed(bus_name: String, volume: float)
-
-func _ready():
-	print("SignalBus ready - Global communication system active")
-	print("Available signal categories: Player, Critter, Game State, UI, Stage, Debug, System")
 
 # Helper functions for common event combinations
 

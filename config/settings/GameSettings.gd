@@ -63,7 +63,7 @@ func load_settings():
 	var err = config.load(SETTINGS_FILE)
 	
 	if err != OK:
-		print("Settings file not found, using defaults")
+		push_warning("Settings file not found, using defaults")
 		save_settings()
 		return
 	
@@ -80,4 +80,3 @@ func save_settings():
 			config.set_value(section, key, settings[section][key])
 	
 	config.save(SETTINGS_FILE)
-	print("Settings saved")

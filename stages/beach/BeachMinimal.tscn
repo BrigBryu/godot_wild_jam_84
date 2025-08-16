@@ -1,11 +1,19 @@
-[gd_scene load_steps=9 format=3 uid="uid://bwspsf6u3rlyb"]
+[gd_scene load_steps=16 format=3 uid="uid://bwspsf6u3rlyb"]
 
 [ext_resource type="Script" uid="uid://dkvh5imcow4wh" path="res://stages/beach/BeachMinimal.gd" id="1"]
 [ext_resource type="Shader" uid="uid://dw885gpwb3icr" path="res://stages/beach/shaders/water_swash.gdshader" id="2"]
 [ext_resource type="Shader" uid="uid://c0yp8b0x1vwx4" path="res://stages/beach/shaders/foam_edge.gdshader" id="3"]
 [ext_resource type="Texture2D" uid="uid://c4np5cfdthqsd" path="res://stages/tilesets/sand_tile_full_16by16.png" id="4_7edi6"]
 [ext_resource type="Script" uid="uid://b78n6udkgwohh" path="res://stages/beach/ShorelineDebug.gd" id="5_debug"]
-[ext_resource type="Script" uid="uid://cm3r4e7mfn7fe" path="res://stages/beach/CritterSpawner.gd" id="6_critter_spawner"]
+[ext_resource type="Script" uid="uid://cm3r4e7mfn7fe" path="res://utilities/spawning/CritterSpawner.gd" id="6_critter_spawner"]
+[ext_resource type="Script" path="res://stages/beach/WaveArea.gd" id="7_wave_area"]
+[ext_resource type="PackedScene" uid="uid://bviq1a3p66vqg" path="res://entities/player/Player.tscn" id="7_player"]
+[ext_resource type="PackedScene" path="res://entities/ui/hud/SimpleHUD.tscn" id="8_hud"]
+[ext_resource type="PackedScene" uid="uid://c7xk8naqw2j5h" path="res://entities/ui/timer/TimerDisplay.tscn" id="9_timer"]
+[ext_resource type="Script" uid="uid://c7od8qxfm38p7" path="res://entities/ui/timer/GameTimer.gd" id="10_game_timer"]
+[ext_resource type="PackedScene" uid="uid://dsf86cw23a20v" path="res://entities/ui/tutorial/TutorialPanel.tscn" id="11_tutorial"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wave"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_Water"]
 shader = ExtResource("2")
@@ -43,6 +51,10 @@ shader_parameter/foam_alpha = 0.85
 [node name="BeachMinimal" type="Node2D"]
 script = ExtResource("1")
 
+[node name="GameTimer" type="Node" parent="."]
+script = ExtResource("10_game_timer")
+game_duration = 60.0
+
 [node name="Sand" type="Sprite2D" parent="."]
 texture = ExtResource("4_7edi6")
 centered = false
@@ -67,3 +79,33 @@ script = ExtResource("5_debug")
 script = ExtResource("6_critter_spawner")
 spawn_chance = 1.0
 spawn_count_range = Vector2i(2, 2)
+
+[node name="WaveArea" type="Area2D" parent="."]
+script = ExtResource("7_wave_area")
+debug_draw = true
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WaveArea"]
+shape = SubResource("RectangleShape2D_wave")
+
+[node name="Player" parent="." instance=ExtResource("7_player")]
+position = Vector2(640, 200)
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+zoom = Vector2(3, 3)
+limit_left = 0
+limit_top = 0
+limit_right = 1280
+limit_bottom = 720
+position_smoothing_enabled = true
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="SimpleHUD" parent="UI" instance=ExtResource("8_hud")]
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TimerDisplay" parent="UI" instance=ExtResource("9_timer")]
+
+[node name="TutorialPanel" parent="UI" instance=ExtResource("11_tutorial")]
+grow_horizontal = 2
+grow_vertical = 2

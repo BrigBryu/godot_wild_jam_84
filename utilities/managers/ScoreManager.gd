@@ -15,13 +15,13 @@ func _ready():
 	SignalBus.game_ended.connect(_on_game_ended)
 	
 	load_high_score()
-	print("ScoreManager ready - High score: ", high_score)
 
 func _on_game_started():
 	"""Reset score for new game"""
 	current_score = 0
 	session_critters_collected = 0
 	SignalBus.score_changed.emit(current_score, 0)
+	SignalBus.collection_count_changed.emit(0, -1)
 
 func _on_critter_collected(critter_info: Dictionary):
 	"""Handle scoring when critter is collected"""
@@ -48,7 +48,8 @@ func _on_critter_collected(critter_info: Dictionary):
 	# Emit score change
 	SignalBus.score_changed.emit(current_score, points)
 	
-	print("Score updated: +", points, " (Total: ", current_score, ")")
+	# Emit collection count change (we don't track total critters yet, so use -1)
+	SignalBus.collection_count_changed.emit(session_critters_collected, -1)
 
 func calculate_final_points(base_points: int, critter_info: Dictionary) -> int:
 	"""Calculate final points with any bonuses or multipliers"""
@@ -75,7 +76,6 @@ func _on_game_ended(final_score: int, critters_collected: int):
 	if final_score > high_score:
 		high_score = final_score
 		save_high_score()
-		print("New high score: ", high_score)
 
 func get_current_score() -> int:
 	return current_score
@@ -95,7 +95,6 @@ func save_high_score():
 	if file:
 		file.store_32(high_score)
 		file.close()
-		print("High score saved: ", high_score)
 	else:
 		push_error("Failed to save high score")
 
@@ -105,11 +104,8 @@ func load_high_score():
 		if file:
 			high_score = file.get_32()
 			file.close()
-			print("High score loaded: ", high_score)
 		else:
 			push_error("Failed to load high score")
-	else:
-		print("No high score file found, starting fresh")
 
 # Debug functions
 func add_debug_points(points: int):

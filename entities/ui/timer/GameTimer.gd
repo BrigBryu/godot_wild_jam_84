@@ -30,6 +30,10 @@ func _process(delta):
 		else:
 			timer_updated.emit(time_remaining)
 			
+			# Also emit through SignalBus for centralized management
+			if SignalBus.has_signal("ui_timer_updated"):
+				SignalBus.ui_timer_updated.emit(time_remaining)
+			
 			# Check for warning threshold
 			if time_remaining <= warning_time and time_remaining > warning_time - delta:
 				timer_warning.emit(time_remaining)
@@ -38,7 +42,6 @@ func start_timer():
 	if not timer_started:
 		timer_started = true
 		set_process(true)
-		print("Game timer started with duration: ", game_duration)
 
 func pause_timer():
 	timer_paused = true
@@ -64,7 +67,6 @@ func get_formatted_time() -> String:
 	return "%02d:%02d" % [minutes, seconds]
 
 func _on_tutorial_completed():
-	print("Tutorial completed, starting game timer")
 	start_timer()
 
 func _on_timer_expired():
@@ -78,5 +80,3 @@ func _on_timer_expired():
 	# Emit game over signal
 	if SignalBus.has_signal("game_over"):
 		SignalBus.game_over.emit()
-	
-	print("Game timer expired! Game frozen.")

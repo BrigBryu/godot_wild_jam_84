@@ -7,15 +7,21 @@ extends Control
 var warning_flash: bool = false
 
 func _ready():
-	# Find the GameTimer node
+	# Find the GameTimer node - check multiple possible locations
 	game_timer = get_node_or_null("/root/Beach/GameTimer")
+	if not game_timer:
+		game_timer = get_node_or_null("/root/BeachMinimal/GameTimer")
+	if not game_timer:
+		game_timer = get_node_or_null("../../GameTimer")
 	if not game_timer:
 		game_timer = get_node_or_null("../GameTimer")
 	
 	if game_timer:
 		game_timer.timer_updated.connect(_on_timer_updated)
-		game_timer.timer_warning.connect(_on_timer_warning)
+		# timer_warning signal exists but we don't need to handle it
 		game_timer.timer_expired.connect(_on_timer_expired)
+	else:
+		push_warning("TimerDisplay: Could not find GameTimer node")
 	
 	# Initially hide until timer starts
 	visible = false
@@ -34,10 +40,6 @@ func _on_timer_updated(time_left: float):
 			timer_label.modulate = Color(1, 0.8, 0.3)  # Yellow warning
 		else:
 			timer_label.modulate = Color.WHITE
-
-func _on_timer_warning(time_left: float):
-	# Could add sound effect or animation here
-	print("Warning: ", time_left, " seconds remaining!")
 
 func _on_timer_expired():
 	if timer_label:
@@ -68,7 +70,7 @@ func _show_game_over():
 	label.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	
 	var score_label = Label.new()
-	score_label.text = "Score: " + str(ScoreManager.get_score())
+	score_label.text = "Score: " + str(ScoreManager.get_current_score())
 	score_label.add_theme_font_size_override("font_size", 32)
 	score_label.set_anchors_preset(Control.PRESET_CENTER)
 	score_label.position.x = -100

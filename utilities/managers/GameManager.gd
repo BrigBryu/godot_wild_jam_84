@@ -36,7 +36,7 @@ func load_level(level_number: int):
 	if ResourceLoader.exists(level_path):
 		get_tree().change_scene_to_file(level_path)
 	else:
-		print("Level %d not found!" % level_number)
+		push_warning("Level %d not found!" % level_number)
 
 func add_score(points: int):
 	score += points

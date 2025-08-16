@@ -48,6 +48,6 @@ SceneManager -> utilities/scene_manager/SceneManager.gd
 ```gdscript
 # Singleton access
 GameManager.start_game()
-SceneManager.change_scene("res://stages/beach/Beach.tscn")
+SceneManager.change_scene("res://stages/beach/BeachMinimal.tscn")
 SignalBus.player_died.emit()
 ```

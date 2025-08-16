@@ -28,7 +28,7 @@ func _ready():
     SignalBus.ui_show_interaction_hint.connect(_on_show_hint)
 
 func _on_critter_collected(critter_info: Dictionary):
-    print("Collected: ", critter_info.name)
+    # Process collected critter
 
 func _on_show_hint(show: bool, hint_text: String = ""):
     interaction_label.visible = show
@@ -84,7 +84,7 @@ func _update_camera(pos: Vector2):
 
 #### `critter_spawned(critter: Node2D)`
 **When:** New critter is created in the world
-**Emitted by:** BeachGenerator  
+**Emitted by:** CritterSpawner  
 **Used by:** Minimap systems, critter tracking
 
 #### `critter_highlighted(critter: Node2D)`
@@ -154,12 +154,12 @@ SignalBus.ui_show_interaction_hint.emit(true, "Press E to collect Starfish")
 
 #### `stage_generation_started()`
 **When:** Beach/level generation begins
-**Emitted by:** BeachGenerator  
+**Emitted by:** CritterSpawner  
 **Used by:** Loading screens, progress bars
 
 #### `stage_generation_completed(critter_count: int)`
 **When:** Beach/level generation finishes
-**Emitted by:** BeachGenerator  
+**Emitted by:** CritterSpawner  
 **Used by:** UI initialization, critter counting
 
 #### `stage_transition_started(new_stage: String)`

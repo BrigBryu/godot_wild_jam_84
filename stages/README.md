@@ -7,9 +7,8 @@ Game locations and environments that serve as parents to entities in the scene t
 
 ### beach/
 Main beach stage
-- Beach.tscn - Main beach scene
-- BeachGenerator.gd - Procedural beach generation
-- BeachData.tres - Beach configuration
+- BeachMinimal.tscn - Main beach scene (simplified version)
+- BeachMinimal.gd - Beach wave physics and management
 - Sections/ - Beach sub-areas
   - TidalZone.tscn
   - SandyArea.tscn

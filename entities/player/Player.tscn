@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://bviq1a3p66vqg"]
+[gd_scene load_steps=17 format=3 uid="uid://bviq1a3p66vqg"]
 
 [ext_resource type="Texture2D" uid="uid://pgqfaavcvgmc" path="res://entities/player/art/TopDown_Demo.png" id="1_player_sprite"]
 [ext_resource type="Script" uid="uid://bphyldp563bht" path="res://entities/player/PlayerController.gd" id="2_player_script"]
@@ -6,12 +6,16 @@
 [ext_resource type="AudioStream" uid="uid://dn4h1i1uhvjks" path="res://stages/beach/sounds/walking_in_shallow_water_2.wav" id="4_water_sound_2"]
 [ext_resource type="AudioStream" uid="uid://218r1rnefrgh" path="res://stages/beach/sounds/walking_in_shallow_water_3.wav" id="5_water_sound_3"]
 [ext_resource type="Shader" uid="uid://xd2gdjxt0yui" path="res://entities/player/water_tint.gdshader" id="6_water_shader"]
+[ext_resource type="Script" uid="uid://db3iwqowpkir4" path="res://entities/player/WaveDetector.gd" id="6_wave_detector"]
+[ext_resource type="Script" uid="uid://djoqgbv1uyy6o" path="res://entities/player/WaterSoundPlayer.gd" id="7_water_sound"]
+[ext_resource type="Script" uid="uid://da77bvllr04ew" path="res://entities/player/WaveForceVisualizer.gd" id="8_force_viz"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
 shader = ExtResource("6_water_shader")
 shader_parameter/hframes = 30
 shader_parameter/vframes = 6
 shader_parameter/in_water = false
+shader_parameter/water_depth = 0.0
 shader_parameter/water_tint = Color(0.8, 0.9, 1, 1)
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
@@ -127,3 +131,12 @@ stream = ExtResource("5_water_sound_3")
 volume_db = -6.0
 pitch_scale = 1.1
 max_distance = 500.0
+
+[node name="WaveDetector" type="Node" parent="."]
+script = ExtResource("6_wave_detector")
+
+[node name="WaterSoundPlayer" type="Node" parent="."]
+script = ExtResource("7_water_sound")
+
+[node name="WaveForceVisualizer" type="Node2D" parent="."]
+script = ExtResource("8_force_viz")

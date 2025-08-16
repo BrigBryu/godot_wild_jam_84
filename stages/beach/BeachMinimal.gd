@@ -1,5 +1,20 @@
 extends Node2D
 
+# Wave state management
+var wave_state: WaveState
+
+# Constants for wave physics and visuals (all units in pixels unless noted)
+const DEFAULT_SHORE_Y = 420.0  # Default Y position where ocean meets sand (pixels from top)
+const DEFAULT_SURGE_DISTANCE = 120.0  # Default maximum wave run-up on beach (pixels)
+const DEFAULT_WAVE_SPEED = 110.0  # Base wave movement speed (pixels/second)
+const DEFAULT_WAVE_HEIGHT = 100.0  # Standard wave height (pixels)
+const FOAM_EDGE_WIDTH = 12.0  # Width of foam texture edge (pixels)
+const FOAM_CREST_OFFSET = 7.0  # Foam position offset from wave crest (pixels)
+const WAVE_PAUSE_DURATION = 0.5  # Time wave pauses at peak (seconds)
+const WAVE_RETREAT_DURATION = 4.0  # Time for wave to retreat (seconds)
+const SURGE_DECELERATION = 200.0  # Wave deceleration on sand (pixels/second²)
+const SPAWN_EDGE_PADDING = 20.0  # Padding from screen edges for spawning (pixels)
+
 @onready var sand      : Sprite2D = $Sand
 @onready var ocean     : Sprite2D = $Ocean      # Static ocean background
 @onready var wave      : Sprite2D = $Wave       # Dynamic wave (can spawn anywhere)
@@ -7,17 +22,17 @@ extends Node2D
 # Debug node disabled for production
 # @onready var debug     : Node2D = $ShorelineDebug
 
-@export var shore_y: float = 420.0  # baseline shoreline position  
-@export var Rmax: float = 120.0   # max run-up distance for natural waves
-@export var w: float = 0.45
-@export var k: float = 0.0
+@export var shore_y: float = DEFAULT_SHORE_Y  # Y position where ocean meets sand (pixels from top)
+@export var Rmax: float = DEFAULT_SURGE_DISTANCE  # Maximum wave run-up distance (pixels)
+@export var w: float = 0.45  # Wave shape parameter (0-1, affects curvature)
+@export var k: float = 0.0  # Wave skew parameter (affects asymmetry)
 @export var lock_vertical: bool = true
 @export var wave_front: Color = Color(0.08, 0.55, 0.62, 0.85)  # Front edge of wave (lighter blue-green, more transparent)
 @export var wave_tail: Color  = Color(0.04, 0.42, 0.56, 0.98)  # Tail edge of wave (darker blue-green, less transparent)
-@export var refract_strength: float = 0.006
-@export var foam_edge_width: float = 12.0
-@export var crest_offset: float = 7.0
-@export var foam_alpha: float = 0.85
+@export var refract_strength: float = 0.006  # Water refraction shader strength (0-1)
+@export var foam_edge_width: float = FOAM_EDGE_WIDTH  # Width of foam edge in pixels
+@export var crest_offset: float = FOAM_CREST_OFFSET  # Foam offset from wave crest in pixels
+@export var foam_alpha: float = 0.85  # Maximum foam opacity (0-1)
 
 @export var normalA_path: String = "res://stages/beach/art/water_normal_map_tileable_looped.jpeg"
 @export var normalB_path: String = "res://stages/beach/art/water_normal_map_tileable_looped_more_wavy.jpeg"
@@ -25,8 +40,8 @@ extends Node2D
 
 # Simple Speed-based Wave System
 @export_group("Wave Properties")
-@export var wave_height: float = 100.0  # Wave height in pixels
-@export var wave_speed: float = 110.0   # Base wave speed in pixels/second
+@export var wave_height: float = DEFAULT_WAVE_HEIGHT  # Wave height in pixels
+@export var wave_speed: float = DEFAULT_WAVE_SPEED  # Base wave speed in pixels/second
 @export var surge_multiplier: float = 1.4  # How much wave speed affects surge height (physics-based)
 
 @export_group("Wave Randomization")
@@ -35,6 +50,10 @@ extends Node2D
 
 # Critter spawner (replaces old starfish system)
 @onready var critter_spawner: CritterSpawner = $CritterSpawner
+# Game timer for managing game duration
+@onready var game_timer: Node = $GameTimer
+# Wave collision area
+@onready var wave_area: WaveArea = $WaveArea
 
 # Single wave state
 var wave_position_y: float = 0.0     # Current Y position of wave bottom
@@ -63,6 +82,11 @@ var surge_deceleration: float = 0.0      # Constant deceleration rate
 var next_wave_time: float = 3.0      # When to spawn next wave
 
 func _ready():
+	# Initialize wave state
+	wave_state = WaveState.new()
+	wave_state.shore_y = shore_y
+	wave_state.surge_height = Rmax
+	
 	# --- Setup sand tiling with Sprite2D ---
 	var vp_size = get_viewport_rect().size
 	
@@ -71,7 +95,8 @@ func _ready():
 	sand.position = Vector2.ZERO
 	
 	# Enable texture repeat mode for tiling
-	sand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# Use LINEAR filtering for smooth vector art (was NEAREST for pixel art)
+	sand.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	sand.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	
 	# Use region to tile the texture across the viewport
@@ -139,13 +164,36 @@ func _ready():
 	wave_edge_y = shore_y
 	wave_phase = "calm"
 	next_wave_time = 3.0  # First wave in 3 seconds
+	
+	# Set up wave area if it exists
+	if wave_area:
+		wave_area.wave_state = wave_state
+		# Emit signal so player can connect
+		SignalBus.wave_area_ready.emit(wave_area)
 
 	get_viewport().size_changed.connect(_on_size_changed)
 	
-	# Connect wave signal to spawner via beach mediation
+	# Wave signal now goes through SignalBus for proper decoupling
 	wave_reached_peak.connect(_on_wave_reached_peak)
+	
+	# Connect to GameManager signals
+	if GameManager.has_signal("game_started"):
+		GameManager.game_started.connect(_on_game_started)
+	if SignalBus.has_signal("game_started"):
+		SignalBus.game_started.connect(_on_game_started)
+	
+	# Start the game timer after a short delay (or when tutorial completes)
+	# For now, start immediately since tutorial auto-completes
+	if game_timer:
+		# Give a small delay for everything to initialize
+		await get_tree().create_timer(0.5).timeout
+		game_timer.start_timer()
 
 func _process(delta: float):
+	# Respect GameManager pause state
+	if GameManager.is_paused:
+		return
+	
 	# Handle wave timing
 	next_wave_time -= delta
 	
@@ -153,6 +201,25 @@ func _process(delta: float):
 	_update_single_wave(delta)
 	
 	# Critters are now permanent - no need for visibility updates or cleanup
+	
+	# Update wave state
+	if wave_state:
+		wave_state.update_position(wave_edge_y, wave_position_y)
+		wave_state.alpha = wave_alpha
+		wave_state.foam_alpha = wave_foam_alpha
+		wave_state.update_bounds(get_viewport_rect().size.x)
+	
+	# Update wave area collision directly
+	if wave_area:
+		var viewport_width = get_viewport_rect().size.x
+		var wave_height = wave_position_y - wave_edge_y
+		if wave_height > 0 and wave_phase != "calm":
+			var wave_bounds = Rect2(0, wave_edge_y, viewport_width, wave_height)
+			wave_area.update_collision_shape(wave_bounds)
+		elif wave_phase == "calm":
+			# Minimal collision area when calm
+			var wave_bounds = Rect2(0, shore_y - 50, viewport_width, 100)
+			wave_area.update_collision_shape(wave_bounds)
 	
 	# Set shader values directly from single wave
 	_current_edge_y = wave_edge_y
@@ -216,6 +283,10 @@ func _update_calm_phase(delta: float):
 		wave_foam_alpha = 1.0
 		critters_spawned_this_wave = false  # Reset for new wave
 		next_wave_time = 8.0  # Next wave in 8 seconds after this one completes
+		
+		# Update wave state
+		if wave_state:
+			wave_state.set_phase("traveling")
 
 func _update_traveling_phase(delta: float):
 	# Realistic wave physics: smooth speed changes based on water depth
@@ -246,14 +317,17 @@ func _update_traveling_phase(delta: float):
 		wave_position_y = shore_y  # Lock to shore
 		wave_edge_y = shore_y - current_wave_height  # Start surge from here
 		
+		# Update wave state
+		if wave_state:
+			wave_state.set_phase("surging")
+		
 		# Initialize surge physics - transition from ocean velocity to deceleration on sand
-		print("Wave transitioned to sand - will decelerate from velocity: ", current_wave_speed)
 
 func _update_surging_phase(delta: float):
 	# PURE PHYSICS - Only velocity and negative acceleration until natural stop
 	
 	# Simple physics: position = position + velocity * time, velocity = velocity + acceleration * time
-	var acceleration = 200.0  # Constant positive acceleration (slows down upward movement)
+	var acceleration = SURGE_DECELERATION  # Constant positive acceleration (slows down upward movement)
 	
 	# Move wave edge by current velocity (negative velocity = upward movement)
 	wave_edge_y += (-current_wave_speed) * delta
@@ -273,11 +347,14 @@ func _update_surging_phase(delta: float):
 		if not critters_spawned_this_wave:
 			critters_spawned_this_wave = true
 			wave_reached_peak.emit(wave_rect)
-			print("Wave reached natural peak at: ", wave_edge_y, " emitting rectangle: ", wave_rect)
 		
 		wave_phase = "pausing"
-		pause_timer = 0.5  # Pause for half second at peak
+		pause_timer = WAVE_PAUSE_DURATION  # Pause at peak
 		wave_phase_progress = 0.0
+		
+		# Update wave state
+		if wave_state:
+			wave_state.set_phase("pausing")
 		return
 	
 	# Simple foam fade as wave slows down
@@ -297,11 +374,14 @@ func _update_pausing_phase(delta: float):
 	if pause_timer <= 0.0:
 		wave_phase = "retreating"
 		wave_phase_progress = 0.0
-		print("Wave starting retreat from pause at: ", actual_peak_y)
+		
+		# Update wave state
+		if wave_state:
+			wave_state.set_phase("retreating")
 
 func _update_retreating_phase(delta: float):
-	# Calculate retreat progress (slower - takes 4 seconds to complete)
-	var retreat_duration = 4.0  # Slower retreat after pause
+	# Calculate retreat progress
+	var retreat_duration = WAVE_RETREAT_DURATION  # Time for wave to retreat
 	wave_phase_progress += delta / retreat_duration
 	
 	if wave_phase_progress >= 1.0:
@@ -310,6 +390,10 @@ func _update_retreating_phase(delta: float):
 		wave_edge_y = shore_y
 		wave_alpha = 0.15
 		wave_foam_alpha = 0.15
+		
+		# Update wave state
+		if wave_state:
+			wave_state.set_phase("calm")
 		return
 	
 	# Smooth retreat movement (from actual peak back to shore)
@@ -337,8 +421,6 @@ func _randomize_wave_properties():
 		# Calculate wave height based on speed (faster waves = taller waves)
 		# Using physics relationship where height is related to wave energy/speed
 		current_wave_height = wave_height * speed_multiplier
-		
-		print("New wave: Speed=", current_wave_speed, " (", speed_multiplier, "x), Height=", current_wave_height, " (calculated from speed)")
 	else:
 		# Use base values
 		current_wave_speed = wave_speed
@@ -347,7 +429,7 @@ func _randomize_wave_properties():
 func _get_wave_rectangle() -> Rect2:
 	"""Get the actual wave rectangle at current position"""
 	var viewport_width = get_viewport_rect().size.x
-	var spawn_padding = 20.0  # Small padding from edges
+	var spawn_padding = SPAWN_EDGE_PADDING  # Padding from edges
 	
 	return Rect2(
 		spawn_padding,
@@ -357,11 +439,15 @@ func _get_wave_rectangle() -> Rect2:
 	)
 
 func _on_wave_reached_peak(wave_rectangle: Rect2):
-	"""Beach mediates between wave signal and spawner"""
-	if critter_spawner and critter_spawner.has_method("spawn_critters_in_rectangle"):
-		critter_spawner.spawn_critters_in_rectangle(wave_rectangle)
-	else:
-		print("Warning: CritterSpawner doesn't have spawn_critters_in_rectangle method")
+	"""Emit wave peak through SignalBus for decoupled spawning"""
+	# Use SignalBus instead of direct spawner reference
+	SignalBus.wave_peak_reached.emit(wave_rectangle)
+
+func _on_game_started():
+	"""Handle game start from GameManager"""
+	# Reset wave system when game starts
+	reset_wave()
+	# Could also trigger other game start behaviors here
 
 # ============================================================================
 # PHYSICS-BASED SURGE CALCULATION
