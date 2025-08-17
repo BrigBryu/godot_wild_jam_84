@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 AudioSettings="*res://config/settings/AudioSettings.gd"
+GameSettings="*res://config/settings/GameSettings.gd"
 SignalBus="*res://utilities/signals/SignalBus.gd"
 ScoreManager="*res://utilities/managers/ScoreManager.gd"
 GameManager="*res://utilities/managers/GameManager.gd"

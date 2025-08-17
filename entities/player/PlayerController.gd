@@ -1,19 +1,31 @@
 extends CharacterBody2D
 
+# Movement
+@export_group("Movement")
 @export var speed: float = 200.0
+@export var acceleration: float = 10.0  # How quickly we reach target speed
+@export var friction: float = 10.0  # How quickly we stop
+@export var wave_influence: float = 1.5  # How much waves affect movement (increased for more effect)
+
+# Shore boundary - SIMPLE HARD WALL
+@export_group("Boundaries")
+@export var shore_y: float = 420.0  # Hard wall position - player cannot go past this
+
+# Interaction
+@export_group("Interaction")
 @export var interaction_distance: float = 30.0
 
+# REMOVED: Water zones not needed with hard wall
+# Player never enters water
+
+# State
+var accumulated_forces: Vector2 = Vector2.ZERO  # Forces applied this frame
 var nearby_organisms: Array = []
 var highlighted_organism: Node2D = null
-var hint_shown: bool = false  # Track if hint is currently shown
+var hint_shown: bool = false
 
-# Separate tracking for wave forces and player input
-var wave_velocity: Vector2 = Vector2.ZERO
-var input_velocity: Vector2 = Vector2.ZERO
-
-@onready var sprite: Sprite2D = $Sprite2D
+@onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var interaction_area: Area2D = $InteractionArea
-@onready var animation_player: AnimationPlayer = $AnimationPlayer
 @onready var wave_detector: WaveDetector = $WaveDetector
 @onready var water_sound_player: WaterSoundPlayer = $WaterSoundPlayer
 # Water sounds removed - will be reworked later
@@ -49,49 +61,98 @@ func setup_interaction_area():
 		interaction_area.collision_layer = 0  # Area2D doesn't need to be on any layer
 		interaction_area.collision_mask = 16  # Layer 5 - Detect interactables only
 
-# Water sounds removed for rework
-# func setup_water_sounds():
-# 	# Connect to the animation player to detect frame changes
-# 	if animation_player:
-# 		# Connect to animation_started to reset frame tracking
-# 		animation_player.animation_started.connect(_on_animation_started)
-
-func _physics_process(delta):
+func _physics_process(delta: float) -> void:
 	var old_position = global_position
+	var old_velocity = velocity
 	
-	handle_movement()
-	update_animation()
-	# Wave detection now handled by WaveDetector component
-	update_organism_highlighting()
+	# DEBUG: Simple status every 2 seconds
+	#if Engine.is_editor_hint() == false and Engine.get_process_frames() % 120 == 0:
+	#	print("Player Y: %.1f | Shore: %.1f | In Wave: %s" % [global_position.y, shore_y, wave_detector.is_in_wave if wave_detector else false])
+	
+	# Apply accumulated forces ONCE at the start of frame
+	if accumulated_forces.length() > 0:
+		velocity += accumulated_forces * wave_influence
+		accumulated_forces = Vector2.ZERO  # Reset immediately after applying
+	
+	# Handle all movement (input + boundaries)
+	handle_movement(delta)
+	
+	# PREVENT TELEPORTATION: Clamp position BEFORE move_and_slide
+	# This prevents the collision system from causing jumps
+	if global_position.y > shore_y - 5:  # Give 5 pixel buffer
+		global_position.y = shore_y - 5
+		if velocity.y > 0:
+			velocity.y = 0  # Stop downward movement at shore
+	
+	# Use Godot's built-in physics
+	var pre_move_pos = global_position
 	move_and_slide()
+	var post_move_pos = global_position
 	
-	# Shore barrier - prevent player from going too far into water
-	enforce_shore_barrier()
+	# SCREEN BOUNDARY CLAMPING - Use camera limits directly
+	# Get camera limits and use them as hard boundaries
+	var camera = get_node_or_null("Camera2D") as Camera2D
+	if camera:
+		# Simple rectangle boundaries matching camera limits
+		# Camera limits are: left=0, right=1280, top=0, bottom=720
+		var player_half_width = 10.0  # Small buffer for player sprite
+		
+		# Left boundary
+		if global_position.x < camera.limit_left + player_half_width:
+			global_position.x = camera.limit_left + player_half_width
+			if velocity.x < 0:
+				velocity.x = 0
+		
+		# Right boundary
+		if global_position.x > camera.limit_right - player_half_width:
+			global_position.x = camera.limit_right - player_half_width
+			if velocity.x > 0:
+				velocity.x = 0
+		
+		# Top boundary
+		if global_position.y < camera.limit_top + player_half_width:
+			global_position.y = camera.limit_top + player_half_width
+			if velocity.y < 0:
+				velocity.y = 0
+	
+	# SECOND SAFETY CHECK: Fix any teleportation that happened
+	if abs(post_move_pos.y - pre_move_pos.y) > 15:  # Teleport detected
+		#print("🔴 Teleport prevented! Jump was: %.1f pixels" % abs(post_move_pos.y - pre_move_pos.y))
+		pass
+		# Revert to pre-move position to prevent teleport
+		global_position = pre_move_pos
+		# Dampen velocity to prevent repeated attempts
+		velocity *= 0.5
+	
+	# Final boundary enforcement (gentle)
+	if global_position.y > shore_y:
+		global_position.y = shore_y
+		velocity.y = min(velocity.y, 0)
+	
+	# Update visuals
+	update_animation()
+	update_organism_highlighting()
 	
 	# Emit position changes for camera following, minimap, etc.
 	if global_position != old_position:
 		SignalBus.player_moved.emit(global_position)
 
-func handle_movement():
-	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+func handle_movement(delta: float) -> void:
+	var input_dir = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	
-	if direction.length() > 0:
-		# Apply wave detector's movement multiplier
-		var speed_multiplier = 1.0
-		if wave_detector:
-			speed_multiplier = wave_detector.get_movement_multiplier()
-		# Set player input velocity
-		input_velocity = direction * speed * speed_multiplier
+	# Calculate target velocity from input
+	var target_velocity = input_dir * speed
+	
+	# Smoothly interpolate to target velocity FIRST
+	if input_dir.length() > 0:
+		# Accelerate towards target
+		velocity = velocity.lerp(target_velocity, acceleration * delta)
 	else:
-		# No player input
-		input_velocity = Vector2.ZERO
+		# Apply friction when no input
+		velocity = velocity.lerp(Vector2.ZERO, friction * delta)
 	
-	# Combine player input with wave forces
-	# Wave forces are accumulated in wave_velocity by WaveArea
-	velocity = input_velocity + wave_velocity
-	
-	# Apply dampening to wave forces over time (so they don't accumulate forever)
-	wave_velocity *= 0.95  # Gradually reduce wave forces
+	# Apply boundary forces AFTER movement (so it can override if needed)
+	apply_boundary_forces(delta)
 
 # Water collision detection removed for complete rework
 # func check_water_collision():
@@ -116,33 +177,31 @@ func handle_movement():
 # 			if sprite and sprite.material:
 # 				sprite.material.set_shader_parameter("in_water", false)
 
-func update_animation():
-	if not animation_player or not sprite:
+func update_animation() -> void:
+	if not sprite:
 		return
+	
+	var input_dir = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	
+	# Play animation based on actual input (not wave movement)
+	if input_dir.length() > 0.1:
+		# Update sprite direction
+		if input_dir.x < -0.1:
+			sprite.flip_h = true  # Flip for left movement
+		elif input_dir.x > 0.1:
+			sprite.flip_h = false  # Normal for right movement
 		
-	# Only play walk animation based on PLAYER INPUT, not wave forces
-	# This prevents the player from "walking" when being pushed by waves
-	if input_velocity.length() > 10:
-		# Update sprite direction based on input
-		if input_velocity.x < 0:
-			sprite.flip_h = false
-		elif input_velocity.x > 0:
-			sprite.flip_h = true
-		
-		if animation_player.has_animation("walk_left"):
-			if animation_player.current_animation != "walk_left":
-				animation_player.play("walk_left")
-			# Water sound tracking removed for rework
+		# Play walk animation
+		if sprite.animation != "walk":
+			sprite.play("walk")
 	else:
-		# Player is idle (even if being moved by waves)
-		if animation_player.has_animation("idle"):
-			if animation_player.current_animation != "idle":
-				animation_player.play("idle")
-			# Water sound tracking removed for rework
+		# Idle animation
+		if sprite.animation != "idle":
+			sprite.play("idle")
 
 func _unhandled_input(event):
 	if event.is_action_pressed("interact"):
-		SignalBus.player_interaction_attempted.emit()
+		# Note: player_interaction_attempted signal was removed (never had listeners)
 		attempt_pickup()
 
 func attempt_pickup():
@@ -238,32 +297,43 @@ func remove_highlight(organism: Node2D):
 	if organism and organism.has_method("set_highlighted"):
 		organism.set_highlighted(false)
 
+# Removed update_water_zone - not needed with hard wall
+
 # Wave interaction methods
-func on_entered_wave():
+func apply_wave_force(force: Vector2) -> void:
+	"""Accumulate wave forces to be applied in physics process"""
+	# Actually accumulate the force
+	accumulated_forces += force
+	
+	# Print significant forces occasionally
+	#if abs(force.y) > 3.0:  # Only print larger forces
+	#	var frame_count = Engine.get_process_frames()
+	#	if frame_count % 60 == 0:  # Print every second
+	#		if force.y < 0:
+	#			print("⬆️🌊 Wave PUSHING player UP: %.1f pixels/frame" % abs(force.y))
+	#		elif force.y > 0:
+	#			print("⬇️🌊 Wave PULLING player DOWN: %.1f pixels/frame" % force.y)
+
+func on_entered_wave() -> void:
 	"""Called by WaveArea when player enters wave"""
-	# Wave forces will start being applied
+	# Handled by update_water_state now
 	pass
 
-func on_exited_wave():
+func on_exited_wave() -> void:
 	"""Called by WaveArea when player exits wave"""
-	# Reset wave velocity when leaving water
-	wave_velocity = Vector2.ZERO
+	# Don't clear accumulated_forces here - let physics_process handle it
+	pass
 
-func enforce_shore_barrier():
-	"""Simple hard barrier - player cannot go past shore line at all"""
-	# Shore is at Y = 420
-	var shore_y = 420.0
+func apply_boundary_forces(delta: float) -> void:
+	"""SOFT BOUNDARY - Apply gentle resistance near shore"""
+	# Apply soft resistance as player approaches shore
+	var distance_to_shore = shore_y - global_position.y
 	
-	# Simple: Cannot go past shore into water
-	if global_position.y > shore_y:
-		# Hard stop at shore
-		global_position.y = shore_y
-		
-		# Cancel any downward velocity
-		if velocity.y > 0:
-			velocity.y = 0
-		if wave_velocity.y > 0:
-			wave_velocity.y = 0  # Complete stop at shore
+	if distance_to_shore < 20 and distance_to_shore > 0:
+		# Getting close to shore - apply gentle upward resistance
+		# This helps prevent hard collisions
+		var resistance_strength = 1.0 - (distance_to_shore / 20.0)  # 0 to 1 as we approach shore
+		velocity.y -= resistance_strength * 100.0 * delta  # Gentle upward push
 
 # Water sound functions removed for complete rework
 # func _on_animation_started(anim_name: StringName):

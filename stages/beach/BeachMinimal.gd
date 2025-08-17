@@ -176,11 +176,7 @@ func _ready():
 	# Wave signal now goes through SignalBus for proper decoupling
 	wave_reached_peak.connect(_on_wave_reached_peak)
 	
-	# Connect to GameManager signals
-	if GameManager.has_signal("game_started"):
-		GameManager.game_started.connect(_on_game_started)
-	if SignalBus.has_signal("game_started"):
-		SignalBus.game_started.connect(_on_game_started)
+	# Note: game_started signal was removed - game starts automatically now
 	
 	# Start the game timer after a short delay (or when tutorial completes)
 	# For now, start immediately since tutorial auto-completes
@@ -209,6 +205,11 @@ func _process(delta: float):
 		wave_state.foam_alpha = wave_foam_alpha
 		wave_state.update_bounds(get_viewport_rect().size.x)
 	
+	# DEBUG: Print wave state changes and key positions
+	#var debug_timer = Engine.get_process_frames() % 120  # Print every 2 seconds
+	#if debug_timer == 0:
+	#	print("Wave: %s at Y=%.1f (Height: %.1f)" % [wave_phase, wave_edge_y, wave_position_y - wave_edge_y])
+	
 	# Update wave area collision directly
 	if wave_area:
 		var viewport_width = get_viewport_rect().size.x
@@ -216,6 +217,7 @@ func _process(delta: float):
 		if wave_height > 0 and wave_phase != "calm":
 			var wave_bounds = Rect2(0, wave_edge_y, viewport_width, wave_height)
 			wave_area.update_collision_shape(wave_bounds)
+			# Removed redundant print
 		elif wave_phase == "calm":
 			# Minimal collision area when calm
 			var wave_bounds = Rect2(0, shore_y - 50, viewport_width, 100)
@@ -342,6 +344,8 @@ func _update_surging_phase(delta: float):
 		# Store actual peak position for retreat
 		actual_peak_y = wave_edge_y
 		
+		#print("🌊🔝 WAVE PEAK REACHED at Y=%.1f" % wave_edge_y)
+		
 		# Emit signal with actual wave rectangle at peak
 		var wave_rect = _get_wave_rectangle()
 		if not critters_spawned_this_wave:
@@ -367,11 +371,13 @@ func _update_pausing_phase(delta: float):
 	
 	# Keep wave stationary at peak
 	wave_edge_y = actual_peak_y
+	wave_position_y = shore_y  # Keep bottom at shore line
 	
 	# Gentle foam animation during pause
 	wave_foam_alpha = 0.7 + 0.2 * sin(Time.get_time_dict_from_system()["second"] * 3.0)
 	
 	if pause_timer <= 0.0:
+		#print("🌊⬇️ WAVE RETREATING from Y=%.1f" % actual_peak_y)
 		wave_phase = "retreating"
 		wave_phase_progress = 0.0
 		
@@ -443,11 +449,8 @@ func _on_wave_reached_peak(wave_rectangle: Rect2):
 	# Use SignalBus instead of direct spawner reference
 	SignalBus.wave_peak_reached.emit(wave_rectangle)
 
-func _on_game_started():
-	"""Handle game start from GameManager"""
-	# Reset wave system when game starts
-	reset_wave()
-	# Could also trigger other game start behaviors here
+# Removed _on_game_started - signal no longer exists
+# Wave system resets in _ready() instead
 
 # ============================================================================
 # PHYSICS-BASED SURGE CALCULATION

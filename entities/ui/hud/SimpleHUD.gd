@@ -5,7 +5,7 @@ extends Control
 @onready var score_label: Label = $TopBar/ScoreLabel
 @onready var timer_label: Label = $TopBar/TimerLabel
 @onready var critter_count_label: Label = $TopBar/CritterCountLabel
-@onready var interaction_hint: Label = $InteractionHint
+@onready var interaction_hint: Label = null  # Will find in _ready()
 @onready var game_timer: Node = null
 
 var total_score: int = 0
@@ -13,11 +13,19 @@ var critters_collected: int = 0
 var total_critters: int = 0
 
 func _ready():
+	# Try to find InteractionHint node - it might be at different paths
+	interaction_hint = get_node_or_null("InteractionHint")
+	if not interaction_hint:
+		# Try alternate path if scene structure is different
+		interaction_hint = get_node_or_null("../InteractionHint")
+	if not interaction_hint:
+		push_warning("InteractionHint node not found in SimpleHUD")
+	
 	# Connect to SignalBus events
 	SignalBus.ui_show_interaction_hint.connect(_on_show_interaction_hint)
 	SignalBus.critter_collected.connect(_on_critter_collected)
 	SignalBus.score_changed.connect(_on_score_changed)
-	SignalBus.stage_generation_completed.connect(_on_stage_completed)
+	# Note: stage_generation_completed signal was removed - set total_critters elsewhere if needed
 	
 	# Find and connect to GameTimer
 	game_timer = get_node_or_null("/root/Beach/GameTimer")
@@ -44,7 +52,7 @@ func _on_show_interaction_hint(show: bool, hint_text: String):
 func _on_timer_updated(time_remaining: float):
 	"""Update timer display"""
 	if timer_label:
-		var minutes = int(time_remaining) / 60
+		var minutes = int(time_remaining / 60.0)  # Proper float division
 		var seconds = int(time_remaining) % 60
 		timer_label.text = "Time: %02d:%02d" % [minutes, seconds]
 		
@@ -56,20 +64,17 @@ func _on_timer_updated(time_remaining: float):
 		else:
 			timer_label.modulate = Color.WHITE
 
-func _on_score_changed(new_score: int, score_change: int):
+func _on_score_changed(new_score: int, _score_change: int):
 	"""Update score display"""
 	total_score = new_score
 	update_display()
 
-func _on_critter_collected(critter_info: Dictionary):
+func _on_critter_collected(_critter_info: Dictionary):
 	"""Update collection count"""
 	critters_collected += 1
 	update_display()
 
-func _on_stage_completed(critter_count: int):
-	"""Set total critter count"""
-	total_critters = critter_count
-	update_display()
+# Removed - stage_generation_completed signal no longer exists
 
 func _on_timer_expired():
 	"""Handle timer expiration"""

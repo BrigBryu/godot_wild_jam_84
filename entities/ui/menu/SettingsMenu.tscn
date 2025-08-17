@@ -64,6 +64,30 @@ custom_minimum_size = Vector2(50, 0)
 theme_override_font_sizes/font_size = 20
 text = "100%"
 
+[node name="GameDuration" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Label" type="Label" parent="VBoxContainer/GameDuration"]
+layout_mode = 2
+custom_minimum_size = Vector2(100, 0)
+theme_override_font_sizes/font_size = 24
+text = "Duration"
+
+[node name="HSlider" type="HSlider" parent="VBoxContainer/GameDuration"]
+layout_mode = 2
+custom_minimum_size = Vector2(150, 0)
+min_value = 15.0
+max_value = 60.0
+step = 5.0
+value = 30.0
+
+[node name="ValueLabel" type="Label" parent="VBoxContainer/GameDuration"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+theme_override_font_sizes/font_size = 20
+text = "30s"
+
 [node name="BackButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 4
@@ -71,4 +95,5 @@ theme_override_font_sizes/font_size = 24
 text = "Back"
 
 [connection signal="value_changed" from="VBoxContainer/MasterVolume/HSlider" to="." method="_on_master_slider_value_changed"]
+[connection signal="value_changed" from="VBoxContainer/GameDuration/HSlider" to="." method="_on_duration_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/BackButton" to="." method="_on_back_button_pressed"]

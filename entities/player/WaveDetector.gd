@@ -6,7 +6,7 @@ extends Node
 
 @export var enabled: bool = true
 @export var movement_slowdown: float = 0.5  # Speed multiplier when in water
-@export var debug_mode: bool = true  # Print debug information
+@export var debug_mode: bool = false  # Print debug information - OFF to reduce spam
 
 # State - Simple boolean tracking
 var is_in_wave: bool = false

@@ -11,17 +11,15 @@ const SCORE_SAVE_FILE = "user://high_score.save"
 func _ready():
 	# Connect to SignalBus events
 	SignalBus.critter_collected.connect(_on_critter_collected)
-	SignalBus.game_started.connect(_on_game_started)
 	SignalBus.game_ended.connect(_on_game_ended)
 	
 	load_high_score()
 
-func _on_game_started():
-	"""Reset score for new game"""
+func reset_for_new_game():
+	"""Reset score for new game - call this when starting a game"""
 	current_score = 0
 	session_critters_collected = 0
 	SignalBus.score_changed.emit(current_score, 0)
-	SignalBus.collection_count_changed.emit(0, -1)
 
 func _on_critter_collected(critter_info: Dictionary):
 	"""Handle scoring when critter is collected"""
@@ -47,9 +45,6 @@ func _on_critter_collected(critter_info: Dictionary):
 	
 	# Emit score change
 	SignalBus.score_changed.emit(current_score, points)
-	
-	# Emit collection count change (we don't track total critters yet, so use -1)
-	SignalBus.collection_count_changed.emit(session_critters_collected, -1)
 
 func calculate_final_points(base_points: int, critter_info: Dictionary) -> int:
 	"""Calculate final points with any bonuses or multipliers"""

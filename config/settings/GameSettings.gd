@@ -20,7 +20,8 @@ var settings = {
 	"gameplay": {
 		"show_interaction_hints": true,
 		"auto_save": true,
-		"difficulty": "normal"
+		"difficulty": "normal",
+		"game_duration": 30.0
 	},
 	"controls": {
 		"move_speed_modifier": 1.0,

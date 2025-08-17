@@ -14,7 +14,7 @@ extends Resource
 @export var phase: String = "calm"
 @export var phase_progress: float = 0.0
 
-# Wave force properties (pixels/second)
+# Wave force properties (pixels/second) - Not used anymore, forces are hardcoded in WaveArea
 @export var surge_force: float = 300.0  # Force pushing up the beach during surge
 @export var retreat_force: float = 250.0  # Force pulling toward ocean during retreat
 

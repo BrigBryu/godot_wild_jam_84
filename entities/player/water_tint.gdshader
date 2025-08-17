@@ -17,11 +17,11 @@ void fragment() {
     if (in_water && water_depth > 0.0) {
         // Get UV within current frame
         vec2 frame_uv = fract(UV * vec2(float(hframes), float(vframes)));
-        
+
         // Tint based on depth - more of sprite gets tinted the deeper we go
         // At depth 0.5, bottom 50% is tinted, at depth 1.0, all is tinted
         float tint_threshold = 1.0 - water_depth;
-        
+
         if (frame_uv.y > tint_threshold) {
             // Apply water tint with gradient
             float tint_strength = (frame_uv.y - tint_threshold) / (1.0 - tint_threshold);

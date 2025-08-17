@@ -1,8 +1,6 @@
 extends Node
 
-signal game_started
-signal game_paused
-signal game_resumed
+# Signals removed - use SignalBus instead
 signal level_completed
 
 var current_level: int = 1
@@ -19,17 +17,16 @@ func _input(event):
 func start_game():
 	score = 0
 	current_level = 1
-	emit_signal("game_started")
+	# Use SignalBus.game_ended instead if needed
+	# SignalBus doesn't have game_started anymore
 	load_level(current_level)
 
 func toggle_pause():
 	is_paused = !is_paused
 	get_tree().paused = is_paused
 	
-	if is_paused:
-		emit_signal("game_paused")
-	else:
-		emit_signal("game_resumed")
+	# Pausing is handled directly, no signals needed
+	pass
 
 func load_level(level_number: int):
 	var level_path = "res://scenes/levels/Level%d.tscn" % level_number
