@@ -9,8 +9,10 @@ Guide Claude Code's changes in this repo:
 - **Correct me bluntly** if I'm off - never let me go astray, prioritize good design patterns
 
 ## Source of Truth & Layout
-- **/readme/** — canonical architecture & conventions. Read this first.
+- **CLAUDE.md** (this file) — Single source of truth for AI assistance and project guidelines
 - **PROJECT_STRUCTURE.md** — The definitive project organization guide
+- **utilities/signals/EVENTS_DOCUMENTATION.md** — Complete SignalBus event reference
+- **Folder READMEs** — Each major folder contains implementation details
 - **Project layout (must respect):**
   ```
   /assets/        art, audio, shaders (non-code)
@@ -21,10 +23,9 @@ Guide Claude Code's changes in this repo:
   /stages/        level scenes (e.g., beach/*, tilesets/*, shaders/*)
   /utilities/     infrastructure layer (managers/, signals/, spawning/, scene_manager/)
   /tests/         (if present) unit/scene tests
-  root docs:      PROJECT_STRUCTURE.md, DEBUG_OUTPUT_GUIDE.md, etc.
   ```
 
-If a change conflicts with /readme/ or PROJECT_STRUCTURE.md, **open an issue** instead of pushing code.
+If a change conflicts with PROJECT_STRUCTURE.md, **open an issue** instead of pushing code.
 
 ## Godot 4 — Required Practices
 

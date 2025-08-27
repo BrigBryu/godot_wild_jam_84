@@ -3,15 +3,17 @@ extends Node
 
 ## Handles water footstep sounds for the player
 ## Uses pattern-based sound variation for realism
+## Syncs with foot-down frame of walk animation
 
 @export var enabled: bool = true
 @export var volume_range: Vector2 = Vector2(-10.0, -7.0)  # dB range
 @export var pitch_variation: float = 0.05  # ±5% pitch variation
+@export var footstep_frame: int = 1  # Frame index for foot-down (walk_right_2)
 
 # Sound patterns for variety
 var water_pattern: Array = [1, 1, 1]  # Current 3-step pattern
 var water_step_count: int = 0
-var last_water_sound_frame: int = -1
+var frame_triggered: bool = false  # Prevents multiple triggers per frame
 
 # Sound nodes
 @onready var water_sound_main: AudioStreamPlayer2D = get_parent().get_node_or_null("WaterSoundMain")
@@ -20,8 +22,7 @@ var last_water_sound_frame: int = -1
 
 # Parent references
 var player: CharacterBody2D
-var sprite: Sprite2D
-var animation_player: AnimationPlayer
+var animated_sprite: AnimatedSprite2D
 var wave_detector: WaveDetector
 
 func _ready() -> void:
@@ -31,25 +32,28 @@ func _ready() -> void:
 		push_error("WaterSoundPlayer must be child of CharacterBody2D")
 		return
 	
-	sprite = player.get_node_or_null("Sprite2D") as Sprite2D
-	animation_player = player.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	animated_sprite = player.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	wave_detector = player.get_node_or_null("WaveDetector") as WaveDetector
 	
-	# Connect to animation player for frame detection
-	if animation_player:
-		animation_player.animation_started.connect(_on_animation_started)
+	# Connect to animation changes for frame tracking reset
+	if animated_sprite:
+		animated_sprite.animation_changed.connect(_on_animation_changed)
+		animated_sprite.frame_changed.connect(_on_frame_changed)
 
 func _process(_delta: float) -> void:
-	if not enabled or not wave_detector or not wave_detector.is_in_water():
+	if not enabled or not animated_sprite or not wave_detector:
 		return
 	
-	# Check for footstep frame during walk animation
-	if animation_player and animation_player.current_animation == "walk_left":
-		if sprite and sprite.frame == 63 and last_water_sound_frame != 63:
+	# Only play sounds when in water, walking, and on the correct frame
+	if not wave_detector.is_in_water():
+		frame_triggered = false  # Reset when not in water
+		return
+	
+	# Check if we're on the walk animation and foot-down frame
+	if animated_sprite.animation == "walk" and animated_sprite.frame == footstep_frame:
+		if not frame_triggered:
 			play_water_footstep()
-			last_water_sound_frame = 63
-		elif sprite and sprite.frame != 63:
-			last_water_sound_frame = sprite.frame
+			frame_triggered = true
 
 func play_water_footstep() -> void:
 	"""Play water footstep sound with pattern variation"""
@@ -109,21 +113,27 @@ func _determine_next_pattern() -> void:
 	else:  # 10% chance
 		water_pattern = [1, 2, 3]
 
-func _on_animation_started(_anim_name: StringName) -> void:
+func _on_animation_changed() -> void:
 	"""Reset frame tracking when animation changes"""
-	last_water_sound_frame = -1
+	frame_triggered = false
 	
-	# Reset pattern when entering water
-	if wave_detector and wave_detector.is_in_water():
+	# Reset pattern when starting to walk in water
+	if animated_sprite.animation == "walk" and wave_detector and wave_detector.is_in_water():
 		water_step_count = 0
 		water_pattern = [1, 1, 1]  # Always start with base pattern
+
+func _on_frame_changed() -> void:
+	"""Reset trigger flag when frame changes"""
+	# Only reset if we're not on the footstep frame anymore
+	if animated_sprite.frame != footstep_frame:
+		frame_triggered = false
 
 func on_entered_water() -> void:
 	"""Called when player enters water"""
 	# Reset sound pattern
 	water_step_count = 0
 	water_pattern = [1, 1, 1]
-	last_water_sound_frame = -1
+	frame_triggered = false
 
 func on_exited_water() -> void:
 	"""Called when player exits water"""
