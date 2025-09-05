@@ -1,0 +1,26 @@
+[gd_scene load_steps=5 format=3 uid="uid://g3mgvmp6qf8b"]
+
+[ext_resource type="Texture2D" uid="uid://hhoy564yxmeb" path="res://entities/organisms/starfish/art/star_fish.png" id="2_4sjxa"]
+[ext_resource type="Script" path="res://entities/organisms/starfish/SimpleStarfish.gd" id="2_starfish_script"]
+
+[sub_resource type="CircleShape2D" id="PhysicsShape"]
+radius = 30.0
+
+[sub_resource type="CircleShape2D" id="InteractionShape"]
+radius = 45.0
+
+[node name="StarFish" type="RigidBody2D"]
+script = ExtResource("2_starfish_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_4sjxa")
+
+[node name="PhysicsCollision" type="CollisionShape2D" parent="."]
+shape = SubResource("PhysicsShape")
+
+[node name="InteractionArea" type="Area2D" parent="."]
+monitoring = false
+
+[node name="InteractionCollision" type="CollisionShape2D" parent="InteractionArea"]
+position = Vector2(0, 1)
+shape = SubResource("InteractionShape")

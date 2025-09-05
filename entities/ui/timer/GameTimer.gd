@@ -1,6 +1,6 @@
 extends Node
 
-@export var game_duration: float = 120.0  # 2 minutes default
+@export var game_duration: float = 240.0  # 4 minutes for more exploration time
 @export var warning_time: float = 30.0  # Show warning in last 30 seconds
 
 var time_remaining: float = 0.0
@@ -67,7 +67,7 @@ func reset_timer():
 	set_process(false)
 
 func get_formatted_time() -> String:
-	var minutes = int(time_remaining) / 60
+	var minutes = int(time_remaining) / 60.0  # Use float division
 	var seconds = int(time_remaining) % 60
 	return "%02d:%02d" % [minutes, seconds]
 

@@ -66,7 +66,7 @@ func calculate_final_points(base_points: int, critter_info: Dictionary) -> int:
 	
 	return final_points
 
-func _on_game_ended(final_score: int, critters_collected: int):
+func _on_game_ended(final_score: int, _critters_collected: int):
 	"""Handle game completion"""
 	if final_score > high_score:
 		high_score = final_score

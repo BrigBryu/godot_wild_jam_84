@@ -2,24 +2,24 @@ extends CharacterBody2D
 
 # Movement
 @export_group("Movement")
-@export var speed: float = 200.0
-@export var acceleration: float = 10.0  # How quickly we reach target speed
-@export var friction: float = 10.0  # How quickly we stop
-@export var wave_influence: float = 1.5  # How much waves affect movement (increased for more effect)
+@export var speed: float = GameConstants.PLAYER_SPEED
+@export var acceleration: float = GameConstants.PLAYER_ACCELERATION
+@export var friction: float = GameConstants.PLAYER_FRICTION
+@export var wave_influence: float = GameConstants.PLAYER_WAVE_INFLUENCE
 
 # Shore boundary - SIMPLE HARD WALL
 @export_group("Boundaries")
-@export var shore_y: float = 420.0  # Hard wall position - player cannot go past this
+@export var shore_y: float = GameConstants.SHORE_Y
+@export var boundary_buffer: float = GameConstants.BOUNDARY_BUFFER
+@export var screen_width: float = GameConstants.SCREEN_WIDTH
+@export var screen_height: float = GameConstants.SCREEN_HEIGHT
 
 # Interaction
 @export_group("Interaction")
-@export var interaction_distance: float = 30.0
+@export var interaction_distance: float = GameConstants.PLAYER_INTERACTION_DISTANCE
 
-# REMOVED: Water zones not needed with hard wall
-# Player never enters water
 
-# State
-var accumulated_forces: Vector2 = Vector2.ZERO  # Forces applied this frame
+# Player state
 var nearby_organisms: Array = []
 var highlighted_organism: Node2D = null
 var hint_shown: bool = false
@@ -28,106 +28,94 @@ var hint_shown: bool = false
 @onready var interaction_area: Area2D = $InteractionArea
 @onready var wave_detector: WaveDetector = $WaveDetector
 @onready var water_sound_player: WaterSoundPlayer = $WaterSoundPlayer
-# Water sounds removed - will be reworked later
-# @onready var water_sound_main: AudioStreamPlayer2D = $WaterSoundMain
-# @onready var water_sound_alt1: AudioStreamPlayer2D = $WaterSoundAlt1
-# @onready var water_sound_alt2: AudioStreamPlayer2D = $WaterSoundAlt2
 
-func _ready():
+# External force component for wave physics
+var external_force_component: ExternalForceComponent = null
+
+func _ready() -> void:
 	# Add to group FIRST before any other setup
 	add_to_group("player")
 	
 	setup_collision_layers()
 	setup_interaction_area()
-	# setup_water_sounds() # Will be restored in Phase 2
 	
 	# Set up wave detector if not present
 	if not wave_detector:
 		wave_detector = WaveDetector.new()
 		wave_detector.name = "WaveDetector"
 		add_child(wave_detector)
+	
+	# Set up external force component for wave physics
+	setup_external_force_component()
+	
+	# CRITICAL FIX: Force refresh all existing organisms collision settings
+	call_deferred("_fix_existing_organism_collisions")
 
-func setup_collision_layers():
-	# Player is on layer 1, collides with world (layer 2) but NOT interactables (layer 5)
-	set_collision_layer_value(1, true)  # Player layer
-	set_collision_mask_value(2, true)   # Collide with world
-	set_collision_mask_value(5, false)  # Don't collide with interactables (can walk through)
+func setup_collision_layers() -> void:
+	# CRITICAL: Clear all layers and masks first, then set ONLY what we want
+	collision_layer = 0  # Clear all layers
+	collision_mask = 0   # Clear all masks
+	
+	# Player is ONLY on layer 1, collides ONLY with world (layer 2)
+	set_collision_layer_value(1, true)   # Player layer ONLY
+	set_collision_mask_value(2, true)    # Collide with world ONLY
+	set_collision_mask_value(1, false)   # Don't collide with other players
+	set_collision_mask_value(5, false)   # Don't collide with interactables (can walk through)
+	set_collision_mask_value(6, false)   # Don't collide with organism physics bodies - CRITICAL FIX
 	# Note: Wave detection happens through Area2D overlap, not collision mask
 
-func setup_interaction_area():
+func setup_interaction_area() -> void:
 	if interaction_area:
 		interaction_area.area_entered.connect(_on_organism_entered_range)
 		interaction_area.area_exited.connect(_on_organism_exited_range)
 		interaction_area.collision_layer = 0  # Area2D doesn't need to be on any layer
-		interaction_area.collision_mask = 16  # Layer 5 - Detect interactables only
+		interaction_area.collision_mask = 16  # Layer 5 - Detect interactables only (2^4 = 16)
+		interaction_area.monitoring = true   # Player monitors for organisms
+		interaction_area.monitorable = false # Player doesn't need to be detected
+		
+		print("🔧 Player InteractionArea: Mask=%d, Monitoring=%s, Radius=%.1f" % [
+			interaction_area.collision_mask,
+			interaction_area.monitoring,
+			240.0  # We set this in Player.tscn
+		])
+
+func setup_external_force_component() -> void:
+	"""Initialize external force component for wave physics"""
+	external_force_component = ExternalForceComponent.new()
+	external_force_component.name = "ExternalForceComponent"
+	external_force_component.mass = 1.0  # Player mass
+	external_force_component.max_velocity = GameConstants.PLAYER_SPEED * 3  # Allow wave boosts
+	add_child(external_force_component)
+	external_force_component.set_physics_body(self)
+	external_force_component.activate()
 
 func _physics_process(delta: float) -> void:
-	var old_position = global_position
-	var old_velocity = velocity
+	var old_position: Vector2 = global_position
 	
-	# DEBUG: Simple status every 2 seconds
-	#if Engine.is_editor_hint() == false and Engine.get_process_frames() % 120 == 0:
-	#	print("Player Y: %.1f | Shore: %.1f | In Wave: %s" % [global_position.y, shore_y, wave_detector.is_in_wave if wave_detector else false])
-	
-	# Apply accumulated forces ONCE at the start of frame
-	if accumulated_forces.length() > 0:
-		velocity += accumulated_forces * wave_influence
-		accumulated_forces = Vector2.ZERO  # Reset immediately after applying
-	
-	# Handle all movement (input + boundaries)
+	# Calculate movement velocity (input + friction)
 	handle_movement(delta)
 	
-	# PREVENT TELEPORTATION: Clamp position BEFORE move_and_slide
-	# This prevents the collision system from causing jumps
-	if global_position.y > shore_y - 5:  # Give 5 pixel buffer
-		global_position.y = shore_y - 5
-		if velocity.y > 0:
-			velocity.y = 0  # Stop downward movement at shore
+	var _pre_slide_position: Vector2 = global_position
+	var _pre_slide_velocity: Vector2 = velocity
 	
-	# Use Godot's built-in physics
-	var pre_move_pos = global_position
+	# Apply the fully calculated velocity to position
 	move_and_slide()
-	var post_move_pos = global_position
 	
-	# SCREEN BOUNDARY CLAMPING - Use camera limits directly
-	# Get camera limits and use them as hard boundaries
-	var camera = get_node_or_null("Camera2D") as Camera2D
-	if camera:
-		# Simple rectangle boundaries matching camera limits
-		# Camera limits are: left=0, right=1280, top=0, bottom=720
-		var player_half_width = 10.0  # Small buffer for player sprite
-		
-		# Left boundary
-		if global_position.x < camera.limit_left + player_half_width:
-			global_position.x = camera.limit_left + player_half_width
-			if velocity.x < 0:
-				velocity.x = 0
-		
-		# Right boundary
-		if global_position.x > camera.limit_right - player_half_width:
-			global_position.x = camera.limit_right - player_half_width
-			if velocity.x > 0:
-				velocity.x = 0
-		
-		# Top boundary
-		if global_position.y < camera.limit_top + player_half_width:
-			global_position.y = camera.limit_top + player_half_width
-			if velocity.y < 0:
-				velocity.y = 0
+	# CRITICAL: Immediate boundary validation after move_and_slide()
+	# If physics pushes us past critical boundaries, crash immediately
+	var ocean_limit = GameConstants.OCEAN_EDGE_Y
+	var left_limit = boundary_buffer
+	var right_limit = screen_width - boundary_buffer
 	
-	# SECOND SAFETY CHECK: Fix any teleportation that happened
-	if abs(post_move_pos.y - pre_move_pos.y) > 15:  # Teleport detected
-		#print("🔴 Teleport prevented! Jump was: %.1f pixels" % abs(post_move_pos.y - pre_move_pos.y))
-		pass
-		# Revert to pre-move position to prevent teleport
-		global_position = pre_move_pos
-		# Dampen velocity to prevent repeated attempts
-		velocity *= 0.5
+	# These will crash the game if move_and_slide() violates critical boundaries
+	# Use scaled tolerances for wave physics in large world
+	var boundary_tolerance = GameConstants.BOUNDARY_BUFFER * 0.5  # 40px tolerance for scaled world
+	assert(global_position.y <= ocean_limit + boundary_tolerance, "FATAL: move_and_slide() pushed player past ocean! Y=%.2f > limit=%.2f" % [global_position.y, ocean_limit])
+	assert(global_position.x >= left_limit - boundary_tolerance, "FATAL: move_and_slide() pushed player past left edge! X=%.2f < limit=%.2f" % [global_position.x, left_limit])
+	assert(global_position.x <= right_limit + boundary_tolerance, "FATAL: move_and_slide() pushed player past right edge! X=%.2f > limit=%.2f" % [global_position.x, right_limit])
 	
-	# Final boundary enforcement (gentle)
-	if global_position.y > shore_y:
-		global_position.y = shore_y
-		velocity.y = min(velocity.y, 0)
+	# Enforce boundaries AFTER physics movement
+	enforce_boundaries()
 	
 	# Update visuals
 	update_animation()
@@ -138,12 +126,17 @@ func _physics_process(delta: float) -> void:
 		SignalBus.player_moved.emit(global_position)
 
 func handle_movement(delta: float) -> void:
-	var input_dir = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var input_dir: Vector2 = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	
 	# Calculate target velocity from input
-	var target_velocity = input_dir * speed
+	var target_velocity: Vector2 = input_dir * speed
 	
-	# Smoothly interpolate to target velocity FIRST
+	# Get accumulated external forces (waves, etc.)
+	var external_velocity: Vector2 = Vector2.ZERO
+	if external_force_component:
+		external_velocity = external_force_component.get_accumulated_force("wave") * wave_influence * delta
+	
+	# Smoothly interpolate to target velocity
 	if input_dir.length() > 0:
 		# Accelerate towards target
 		velocity = velocity.lerp(target_velocity, acceleration * delta)
@@ -151,31 +144,12 @@ func handle_movement(delta: float) -> void:
 		# Apply friction when no input
 		velocity = velocity.lerp(Vector2.ZERO, friction * delta)
 	
-	# Apply boundary forces AFTER movement (so it can override if needed)
+	# Add external forces to final velocity
+	velocity += external_velocity
+	
+	# Apply boundary forces to modify velocity before it's used
 	apply_boundary_forces(delta)
 
-# Water collision detection removed for complete rework
-# func check_water_collision():
-# 	# Check if player is in water zone based on position
-# 	var beach_scene = get_node_or_null("/root/BeachMinimal")
-# 	if beach_scene and "shore_y" in beach_scene:
-# 		var water_boundary = beach_scene.shore_y
-# 		
-# 		if global_position.y > water_boundary and not is_in_water:
-# 			is_in_water = true
-# 			SignalBus.player_entered_water.emit()
-# 			# Update shader to show water tint on bottom half
-# 			if sprite and sprite.material:
-# 				sprite.material.set_shader_parameter("in_water", true)
-# 			# Reset pattern when entering water
-# 			water_step_count = 0
-# 			water_pattern = [1, 1, 1]  # Always start with pattern 1,1,1
-# 		elif global_position.y <= water_boundary and is_in_water:
-# 			is_in_water = false
-# 			SignalBus.player_exited_water.emit()
-# 			# Remove water tint
-# 			if sprite and sprite.material:
-# 				sprite.material.set_shader_parameter("in_water", false)
 
 func update_animation() -> void:
 	if not sprite:
@@ -199,16 +173,22 @@ func update_animation() -> void:
 		if sprite.animation != "idle":
 			sprite.play("idle")
 
-func _unhandled_input(event):
+func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact"):
 		# Note: player_interaction_attempted signal was removed (never had listeners)
 		attempt_pickup()
 
-func attempt_pickup():
+func attempt_pickup() -> void:
+	print("🎯 ATTEMPT PICKUP: Highlighted=%s | Nearby count=%d" % [
+		highlighted_organism.name if highlighted_organism else "None",
+		nearby_organisms.size()
+	])
 	if highlighted_organism:
 		collect_organism(highlighted_organism)
+	else:
+		print("❌ NO HIGHLIGHTED ORGANISM TO COLLECT")
 
-func collect_organism(organism: Node2D):
+func collect_organism(organism: Node2D) -> void:
 	if not organism:
 		return
 	
@@ -228,18 +208,35 @@ func collect_organism(organism: Node2D):
 		# Fallback if somehow not a proper organism
 		organism.queue_free()
 
-func _on_organism_entered_range(area: Area2D):
-	if area.is_in_group("organisms"):
-		nearby_organisms.append(area)
-		SignalBus.critter_interaction_available.emit(area)
+func _on_organism_entered_range(area: Area2D) -> void:
+	print("🎯 PLAYER DETECTED AREA: %s | Groups: %s | Layer: %d | Parent: %s" % [
+		area.name,
+		str(area.get_groups()),
+		area.collision_layer,
+		area.get_parent().name if area.get_parent() else "None"
+	])
+	
+	# Check if this is an InteractionArea of an organism
+	if area.is_in_group("organisms") or (area.get_parent() and area.get_parent().is_in_group("organisms")):
+		# CRITICAL FIX: Always get the parent organism, not the InteractionArea itself!
+		var organism = area.get_parent() if area.name == "InteractionArea" else area
+		nearby_organisms.append(organism)
+		print("✅ ORGANISM ADDED TO NEARBY: %s (Total: %d)" % [organism.name, nearby_organisms.size()])
+		SignalBus.critter_interaction_available.emit(organism)
 
-func _on_organism_exited_range(area: Area2D):
-	if area.is_in_group("organisms"):
-		nearby_organisms.erase(area)
-		SignalBus.critter_interaction_unavailable.emit(area)
+func _on_organism_exited_range(area: Area2D) -> void:
+	print("🎯 PLAYER LOST AREA: %s | Parent: %s" % [area.name, area.get_parent().name if area.get_parent() else "None"])
+	
+	# Check if this is an InteractionArea of an organism  
+	if area.is_in_group("organisms") or (area.get_parent() and area.get_parent().is_in_group("organisms")):
+		# CRITICAL FIX: Always get the parent organism, not the InteractionArea itself!
+		var organism = area.get_parent() if area.name == "InteractionArea" else area
+		nearby_organisms.erase(organism)
+		print("❌ ORGANISM REMOVED FROM NEARBY: %s (Remaining: %d)" % [organism.name, nearby_organisms.size()])
+		SignalBus.critter_interaction_unavailable.emit(organism)
 		
-		if highlighted_organism == area:
-			remove_highlight(area)
+		if highlighted_organism == organism:
+			remove_highlight(organism)
 			highlighted_organism = null
 		
 		# Hide interaction hint if no organisms nearby
@@ -247,7 +244,7 @@ func _on_organism_exited_range(area: Area2D):
 			SignalBus.ui_show_interaction_hint.emit(false, "")
 			hint_shown = false
 
-func update_organism_highlighting():
+func update_organism_highlighting() -> void:
 	if nearby_organisms.is_empty():
 		if highlighted_organism:
 			remove_highlight(highlighted_organism)
@@ -278,6 +275,7 @@ func update_organism_highlighting():
 		# Apply new highlight
 		highlighted_organism = closest_organism
 		if highlighted_organism:
+			print("🌟 HIGHLIGHTING ORGANISM: %s at distance %.1f" % [highlighted_organism.name, closest_distance])
 			apply_highlight(highlighted_organism)
 			SignalBus.critter_highlighted.emit(highlighted_organism)
 			
@@ -289,105 +287,132 @@ func update_organism_highlighting():
 				SignalBus.ui_show_interaction_hint.emit(true, hint_text)
 				hint_shown = true
 
-func apply_highlight(organism: Node2D):
+func apply_highlight(organism: Node2D) -> void:
 	if organism and organism.has_method("set_highlighted"):
 		organism.set_highlighted(true)
 
-func remove_highlight(organism: Node2D):
+func remove_highlight(organism: Node2D) -> void:
 	if organism and organism.has_method("set_highlighted"):
 		organism.set_highlighted(false)
 
-# Removed update_water_zone - not needed with hard wall
+func get_force_component() -> ExternalForceComponent:
+	"""Get the external force component for this player"""
+	return external_force_component
 
 # Wave interaction methods
 func apply_wave_force(force: Vector2) -> void:
-	"""Accumulate wave forces to be applied in physics process"""
-	# Actually accumulate the force
-	accumulated_forces += force
+	"""Apply wave forces via ExternalForceComponent"""
+	if external_force_component:
+		external_force_component.add_force(force, "wave", ExternalForceComponent.ForceMode.CONSTANT)
+	else:
+		push_error("CRITICAL: Player missing ExternalForceComponent - wave forces ignored")
+
+func apply_external_force(force: Vector2, source: String = "unknown", mode: ExternalForceComponent.ForceMode = ExternalForceComponent.ForceMode.CONSTANT) -> void:
+	"""Apply external force using force system"""
+	if external_force_component:
+		external_force_component.add_force(force, source, mode)
 	
-	# Print significant forces occasionally
-	#if abs(force.y) > 3.0:  # Only print larger forces
-	#	var frame_count = Engine.get_process_frames()
-	#	if frame_count % 60 == 0:  # Print every second
-	#		if force.y < 0:
-	#			print("⬆️🌊 Wave PUSHING player UP: %.1f pixels/frame" % abs(force.y))
-	#		elif force.y > 0:
-	#			print("⬇️🌊 Wave PULLING player DOWN: %.1f pixels/frame" % force.y)
 
 func on_entered_wave() -> void:
 	"""Called by WaveArea when player enters wave"""
-	# Handled by update_water_state now
-	pass
+	pass  # Wave forces applied through apply_wave_force()
 
 func on_exited_wave() -> void:
 	"""Called by WaveArea when player exits wave"""
-	# Don't clear accumulated_forces here - let physics_process handle it
-	pass
+	if external_force_component:
+		external_force_component.clear_forces("wave")
 
 func apply_boundary_forces(delta: float) -> void:
 	"""SOFT BOUNDARY - Apply gentle resistance near shore"""
 	# Apply soft resistance as player approaches shore
-	var distance_to_shore = shore_y - global_position.y
+	var distance_to_shore: float = shore_y - global_position.y
 	
-	if distance_to_shore < 20 and distance_to_shore > 0:
+	if distance_to_shore < GameConstants.SOFT_BOUNDARY_DISTANCE and distance_to_shore > 0:
 		# Getting close to shore - apply gentle upward resistance
 		# This helps prevent hard collisions
-		var resistance_strength = 1.0 - (distance_to_shore / 20.0)  # 0 to 1 as we approach shore
-		velocity.y -= resistance_strength * 100.0 * delta  # Gentle upward push
+		var resistance_strength: float = 1.0 - (distance_to_shore / GameConstants.SOFT_BOUNDARY_DISTANCE)  # 0 to 1 as we approach shore
+		velocity.y -= resistance_strength * GameConstants.RESISTANCE_FORCE * delta  # Gentle upward push
 
-# Water sound functions removed for complete rework
-# func _on_animation_started(anim_name: StringName):
-# 	# Reset frame tracking when a new animation starts
-# 	last_water_sound_frame = -1
-# 
-# func play_water_footstep_sound():
-# 	# Get current sound from pattern
-# 	var current_sound = water_pattern[water_step_count % 3]
-# 	
-# 	# Play the appropriate sound with ±5% pitch variation and quieter volume
-# 	if current_sound == 1:
-# 		if water_sound_main and water_sound_main.stream:
-# 			water_sound_main.pitch_scale = randf_range(0.95, 1.05)
-# 			water_sound_main.volume_db = randf_range(-10.0, -7.0)
-# 			water_sound_main.play()
-# 	elif current_sound == 2:
-# 		if water_sound_alt1 and water_sound_alt1.stream:
-# 			water_sound_alt1.pitch_scale = randf_range(0.95, 1.05)
-# 			water_sound_alt1.volume_db = randf_range(-10.0, -7.0)
-# 			water_sound_alt1.play()
-# 	elif current_sound == 3:
-# 		if water_sound_alt2 and water_sound_alt2.stream:
-# 			water_sound_alt2.pitch_scale = randf_range(0.95, 1.05)
-# 			water_sound_alt2.volume_db = randf_range(-10.0, -7.0)
-# 			water_sound_alt2.play()
-# 	
-# 	# Increment step counter
-# 	water_step_count += 1
-# 	
-# 	# Every 3 steps, determine the next pattern
-# 	if water_step_count % 3 == 0:
-# 		determine_next_pattern()
-# 
-# func determine_next_pattern():
-# 	# Pattern probabilities:
-# 	# [1,1,1] = 40%
-# 	# [1,2,2] = 20%
-# 	# [2,2,2] = 10%
-# 	# [1,3,1] = 10%
-# 	# [1,2,1] = 10%
-# 	# [1,2,3] = 10%
-# 	
-# 	var roll = randf()
-# 	
-# 	if roll < 0.4:  # 40% chance
-# 		water_pattern = [1, 1, 1]
-# 	elif roll < 0.6:  # 20% chance
-# 		water_pattern = [1, 2, 2]
-# 	elif roll < 0.7:  # 10% chance
-# 		water_pattern = [2, 2, 2]
-# 	elif roll < 0.8:  # 10% chance
-# 		water_pattern = [1, 3, 1]
-# 	elif roll < 0.9:  # 10% chance
-# 		water_pattern = [1, 2, 1]
-# 	else:  # 10% chance
-# 		water_pattern = [1, 2, 3]
+func _fix_existing_organism_collisions() -> void:
+	"""Fix collision settings for all existing organisms in the scene"""
+	# Find all organisms in the scene
+	for organism in get_tree().get_nodes_in_group("organisms"):
+		if organism.has_method("setup_collision_layers"):
+			organism.setup_collision_layers()
+		elif organism.has_node("PhysicsBody"):
+			# Manually fix collision settings for organisms without setup method
+			var physics_body = organism.get_node("PhysicsBody")
+			if physics_body:
+				# CRITICAL: Clear all layers and set ONLY layer 6
+				physics_body.collision_layer = 0  # Clear all layers
+				physics_body.set_collision_layer_value(6, true)  # ONLY Physics organisms layer
+				physics_body.set_collision_layer_value(1, false)  # NOT on player layer
+				
+				# Clear all masks and set ONLY world collision
+				physics_body.collision_mask = 0  # Clear all masks
+				physics_body.set_collision_mask_value(2, true)   # Collide with world only
+				physics_body.set_collision_mask_value(1, false)  # NO collision with player
+
+func enforce_boundaries() -> void:
+	"""Mixed boundary enforcement - hard clamps for critical boundaries, soft for others"""
+	var boundary_push_force = 2400.0  # 8x scaled from 300.0
+	var delta_time = get_physics_process_delta_time()
+	var original_position = global_position
+	
+	_enforce_hard_boundaries()
+	_validate_boundary_enforcement(original_position)
+	_apply_soft_boundaries(boundary_push_force, delta_time)
+
+func _enforce_hard_boundaries() -> void:
+	"""Apply hard position clamps that cannot be violated"""
+	var ocean_edge_y = GameConstants.OCEAN_EDGE_Y
+	
+	# Ocean barrier - HARD position clamp with velocity stop
+	if global_position.y > ocean_edge_y:
+		global_position.y = ocean_edge_y
+		if velocity.y > 0:
+			velocity.y = 0
+		assert(global_position.y <= ocean_edge_y + 1.0, "FATAL: Ocean boundary violation after clamp! Position: %s, Limit: %s" % [global_position.y, ocean_edge_y])
+	
+	# Screen edge boundaries - HARD position clamps
+	if global_position.x < boundary_buffer:
+		global_position.x = boundary_buffer
+		if velocity.x < 0:
+			velocity.x = 0
+		assert(global_position.x >= boundary_buffer - 1.0, "FATAL: Left boundary violation after clamp! Position: %s, Limit: %s" % [global_position.x, boundary_buffer])
+	
+	if global_position.x > screen_width - boundary_buffer:
+		global_position.x = screen_width - boundary_buffer
+		if velocity.x > 0:
+			velocity.x = 0
+		assert(global_position.x <= screen_width - boundary_buffer + 1.0, "FATAL: Right boundary violation after clamp! Position: %s, Limit: %s" % [global_position.x, screen_width - boundary_buffer])
+
+func _validate_boundary_enforcement(original_position: Vector2) -> void:
+	"""Final validation - crash if any boundary is violated"""
+	var ocean_edge_y = GameConstants.OCEAN_EDGE_Y
+	
+	# Critical boundary violations - allow small tolerance after hard clamps
+	var validation_tolerance = 20.0  # Small tolerance for floating-point precision
+	assert(global_position.y <= ocean_edge_y + validation_tolerance, "FATAL BOUNDARY VIOLATION: Player in deep ocean! Y=%.2f > limit=%.2f" % [global_position.y, ocean_edge_y])
+	assert(global_position.x >= boundary_buffer - validation_tolerance, "FATAL BOUNDARY VIOLATION: Player past left edge! X=%.2f < limit=%.2f" % [global_position.x, boundary_buffer])
+	assert(global_position.x <= screen_width - boundary_buffer + validation_tolerance, "FATAL BOUNDARY VIOLATION: Player past right edge! X=%.2f > limit=%.2f" % [global_position.x, screen_width - boundary_buffer])
+	
+	# Sanity checks for impossible positions
+	assert(not is_nan(global_position.x) and not is_nan(global_position.y), "FATAL: Player position contains NaN! Position: %s" % global_position)
+	assert(not is_inf(global_position.x) and not is_inf(global_position.y), "FATAL: Player position contains infinity! Position: %s" % global_position)
+	# Allow larger jumps for wave physics in scaled world
+	var max_frame_jump = GameConstants.PLAYER_SPEED * 2.0  # 2 frames worth of max player speed
+	assert(global_position.distance_to(original_position) < max_frame_jump, "FATAL: Massive position jump detected! From: %s To: %s Distance: %.2f" % [original_position, global_position, global_position.distance_to(original_position)])
+
+func _apply_soft_boundaries(boundary_push_force: float, delta_time: float) -> void:
+	"""Apply gentle resistance near boundary limits"""
+	var ocean_edge_y = GameConstants.OCEAN_EDGE_Y
+	
+	# Ocean approach warning - apply resistance as you get close
+	var ocean_warning_zone = ocean_edge_y - 100.0  # 100 pixels before hard limit (tighter play area)
+	if global_position.y > ocean_warning_zone and global_position.y <= ocean_edge_y:
+		var approach_factor = (global_position.y - ocean_warning_zone) / 100.0  # 0 to 1
+		velocity.y -= boundary_push_force * approach_factor * delta_time
+	
+	# Shore boundary REMOVED - player can now explore full beach area above shore
+	# (No longer pushing player back to water)

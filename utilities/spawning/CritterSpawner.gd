@@ -11,8 +11,8 @@ extends Node2D
 @export var organism_scenes: Array[String] = []
 
 # Spawn zone configuration (between water max and shore)
-@export var spawn_zone_padding: float = 20.0  # Distance from edges to avoid spawning
-@export var organism_spacing: float = 50.0  # Minimum distance between organisms
+@export var spawn_zone_padding: float = 160.0  # 8x scaled - Distance from edges to avoid spawning
+@export var organism_spacing: float = 400.0  # 8x scaled - Minimum distance between organisms
 @export var max_spawn_attempts: int = 20  # Max attempts to find a non-overlapping position
 
 # Critters are now permanently visible - no fade animation needed
@@ -54,8 +54,8 @@ func _ready():
 func _setup_default_scenes():
 	"""Set up default organism scene paths"""
 	organism_scenes = [
-		"res://entities/organisms/critters/starfish/StarFish.tscn",
-		"res://entities/organisms/critters/crab/crab.tscn"
+		"res://entities/organisms/starfish/starfish_simple.tscn",
+		"res://entities/organisms/crab/crab_simple.tscn"
 	]
 
 func should_spawn_organisms() -> bool:
@@ -83,32 +83,19 @@ func spawn_organisms_in_rectangle(spawn_rectangle: Rect2):
 	
 	var new_organisms: Array[Node2D] = []
 	
-	# First pass: create organisms invisibly and let _ready() run
+	# Simple spawning - organisms handle their own setup
 	for i in range(count):
 		var organism = _create_random_organism()
 		if organism:
-			# Make invisible immediately to prevent flash of large organism
-			organism.modulate.a = 0.0
-			# Add to scene tree so _ready() runs and sets spawn properties
+			# Add to scene tree - _ready() handles all setup automatically
 			add_child(organism)
+			
+			# Position in the spawn rectangle
+			_position_organism_in_rectangle(organism, spawn_rectangle)
+			
 			new_organisms.append(organism)
-	
-	# Wait one frame for all _ready() functions to complete
-	await get_tree().process_frame
-	
-	# Second pass: setup spawning properties, position, and make visible
-	for organism in new_organisms:
-		# Apply scaling now that _ready() has run
-		organism.setup_for_spawning()
-		
-		# Position the properly scaled organism in the rectangle
-		_position_organism_in_rectangle(organism, spawn_rectangle)
-		
-		# Now make it visible at the correct size and position
-		organism.modulate.a = 1.0
-		
-		active_organisms.append(organism)
-		successful_spawns += 1
+			active_organisms.append(organism)
+			successful_spawns += 1
 
 func _create_random_organism() -> Node2D:
 	"""Create a random organism based on spawn weights"""
@@ -116,42 +103,9 @@ func _create_random_organism() -> Node2D:
 		push_warning("No organism scenes available for spawning")
 		return null
 	
-	# First, instantiate all possible organisms to get their weights
-	var available_organisms: Array[Node2D] = []
-	var weights: Array[float] = []
-	
-	for scene_path in organism_scenes:
-		var organism = _instantiate_organism_from_path(scene_path)
-		if organism:
-			available_organisms.append(organism)
-			weights.append(organism.get_spawn_weight())
-		
-	if available_organisms.is_empty():
-		push_warning("No valid organisms could be instantiated")
-		return null
-	
-	# Calculate total weight
-	var total_weight = 0.0
-	for weight in weights:
-		total_weight += weight
-	
-	# Select random organism based on weights
-	var random_value = randf() * total_weight
-	var current_weight = 0.0
-	
-	for i in range(available_organisms.size()):
-		current_weight += weights[i]
-		if random_value <= current_weight:
-			# Free the other organisms we don't need
-			for j in range(available_organisms.size()):
-				if j != i:
-					available_organisms[j].queue_free()
-			return available_organisms[i]
-	
-	# Fallback to first organism (and free the rest)
-	for j in range(1, available_organisms.size()):
-		available_organisms[j].queue_free()
-	return available_organisms[0]
+	# Simple random selection - no complex weights needed
+	var random_scene = organism_scenes[randi() % organism_scenes.size()]
+	return _instantiate_organism_from_path(random_scene)
 
 func _instantiate_organism_from_path(scene_path: String) -> Node2D:
 	"""Instantiate an organism from its scene path"""
@@ -200,7 +154,14 @@ func _position_organism_in_rectangle(organism: Node2D, rect: Rect2):
 			randf_range(rect.position.y, rect.position.y + rect.size.y)
 		)
 	
-	organism.position = final_position
+	# Position the organism - simple and clean
+	organism.global_position = final_position
+	
+	# Reset physics state for clean spawning
+	if organism is RigidBody2D:
+		organism.linear_velocity = Vector2.ZERO
+		organism.angular_velocity = 0.0
+		organism.sleeping = false
 
 func _is_position_clear(test_position: Vector2) -> bool:
 	"""Check if a position is clear of other organisms"""

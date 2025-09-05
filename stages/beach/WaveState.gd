@@ -11,7 +11,7 @@ extends Resource
 
 # Wave physics
 @export var velocity: Vector2 = Vector2.ZERO
-@export var phase: String = "calm"
+@export var phase: GameConstants.WavePhase = GameConstants.WavePhase.CALM
 @export var phase_progress: float = 0.0
 
 # Wave force properties (pixels/second) - Not used anymore, forces are hardcoded in WaveArea
@@ -28,7 +28,7 @@ extends Resource
 @export var surge_height: float = 120.0
 
 # Signals for state changes
-signal phase_changed(new_phase: String)
+signal phase_changed(new_phase: GameConstants.WavePhase)
 signal bounds_changed(new_bounds: Rect2)
 signal position_changed(edge_y: float, bottom_y: float)
 
@@ -36,13 +36,13 @@ func update_bounds(viewport_width: float) -> void:
 	"""Update wave collision bounds based on current position"""
 	var top = edge_y
 	var bottom = bottom_y
-	var height = bottom - top
+	var calculated_height = bottom - top
 	
-	if height > 0:
-		bounds = Rect2(0, top, viewport_width, height)
+	if calculated_height > 0:
+		bounds = Rect2(0, top, viewport_width, calculated_height)
 		bounds_changed.emit(bounds)
 
-func set_phase(new_phase: String) -> void:
+func set_phase(new_phase: GameConstants.WavePhase) -> void:
 	"""Change wave phase and emit signal"""
 	if phase != new_phase:
 		phase = new_phase

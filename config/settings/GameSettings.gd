@@ -21,7 +21,7 @@ var settings = {
 		"show_interaction_hints": true,
 		"auto_save": true,
 		"difficulty": "normal",
-		"game_duration": 30.0
+		"game_duration": 240.0
 	},
 	"controls": {
 		"move_speed_modifier": 1.0,

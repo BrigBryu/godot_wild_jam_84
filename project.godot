@@ -22,7 +22,6 @@ AudioSettings="*res://config/settings/AudioSettings.gd"
 GameSettings="*res://config/settings/GameSettings.gd"
 SignalBus="*res://utilities/signals/SignalBus.gd"
 ScoreManager="*res://utilities/managers/ScoreManager.gd"
-GameManager="*res://utilities/managers/GameManager.gd"
 
 [display]
 
@@ -47,8 +46,7 @@ folder_colors={
 "res://config/settings/": "orange",
 "res://entities/": "green",
 "res://entities/organisms/": "teal",
-"res://entities/organisms/critters/": "blue",
-"res://entities/organisms/critters/starfish/": "pink",
+"res://entities/organisms/starfish/": "pink",
 "res://entities/player/": "blue",
 "res://entities/ui/": "purple",
 "res://entities/weather/": "gray",

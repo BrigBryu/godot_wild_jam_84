@@ -7,17 +7,17 @@ extends Node
 # Emitted when player position changes (for camera, minimap, etc.)
 signal player_moved(new_position: Vector2)
 # Water signals
-signal player_entered_water()
-signal player_exited_water()
-signal wave_area_ready(wave_area: Area2D)  # Can't use custom class type in signal
+signal player_entered_water()  ## Emitted by WaveArea and WaveDetector
+signal player_exited_water()  ## Emitted by WaveArea and WaveDetector
+signal wave_area_ready(wave_area: Area2D)  ## Emitted by BeachMinimal
 
 # === CRITTER SIGNALS ===
 # Emitted when a critter is successfully collected
 signal critter_collected(critter_info: Dictionary)
 # Emitted when a critter becomes highlighted
-signal critter_highlighted(critter: Node2D)
+signal critter_highlighted(critter: Node2D)  ## Emitted by PlayerController
 # Emitted when critter highlight is removed
-signal critter_unhighlighted(critter: Node2D)
+signal critter_unhighlighted(critter: Node2D)  ## Emitted by PlayerController
 # Emitted when player gets near enough to interact with critter
 signal critter_interaction_available(critter: Node2D)
 # Emitted when player moves away from critter
@@ -27,7 +27,7 @@ signal critter_interaction_unavailable(critter: Node2D)
 # Emitted when game ends (all critters collected or player quits)
 signal game_ended(final_score: int, critters_collected: int)
 # Emitted when score changes
-signal score_changed(new_score: int, score_change: int)
+signal score_changed(new_score: int, score_change: int)  ## Emitted by ScoreManager
 
 # === UI SIGNALS ===
 # Show/hide interaction hint ("Press E to collect")
@@ -39,7 +39,7 @@ signal ui_show_completion_message(total_score: int, total_collected: int)
 
 # === STAGE SIGNALS ===
 # Wave signal for spawning
-signal wave_peak_reached(spawn_rectangle: Rect2)
+signal wave_peak_reached(spawn_rectangle: Rect2)  ## Emitted by BeachMinimal
 
 # (Debug and system signals removed - were never used)
 

@@ -7,7 +7,7 @@ extends Node
 @export var enabled: bool = true
 @export var movement_slowdown: float = 0.5  # Speed multiplier when in water
 @export var debug_mode: bool = false  # Print debug information - OFF to reduce spam
-@export var ocean_threshold_y: float = 420.0  # Y position where ocean water starts
+@export var ocean_threshold_y: float = GameConstants.SHORE_Y  # Y position where ocean water starts
 
 # State - Track both wave and ocean separately
 var is_in_wave: bool = false
@@ -64,19 +64,19 @@ func _process(delta: float) -> void:
 			var wave_state = wave_area.wave_state
 			
 			# Print based on wave phase (only in debug mode)
-			if wave_state.phase == "surging":
+			if wave_state.phase == GameConstants.WavePhase.SURGING:
 				print("   ↑ WAVE PUSHING UP BEACH")
-			elif wave_state.phase == "retreating":
+			elif wave_state.phase == GameConstants.WavePhase.RETREATING:
 				print("   ↓ WAVE PULLING TO OCEAN")
-			elif wave_state.phase == "pausing":
+			elif wave_state.phase == GameConstants.WavePhase.PAUSING:
 				print("   ~ WAVE HOLDING")
 
 func _on_wave_area_ready(area: Area2D) -> void:
 	"""Connect to wave area when it's ready"""
 	wave_area = area as WaveArea
 	if wave_area:
-		wave_area.body_entered_wave.connect(_on_body_entered_wave)
-		wave_area.body_exited_wave.connect(_on_body_exited_wave)
+		wave_area.body_entered.connect(_on_body_entered_wave)
+		wave_area.body_exited.connect(_on_body_exited_wave)
 
 func _on_body_entered_wave(body: Node2D) -> void:
 	"""Handle entering wave"""

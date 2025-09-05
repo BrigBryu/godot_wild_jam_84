@@ -14,12 +14,21 @@ var total_critters: int = 0
 
 func _ready():
 	# Try to find InteractionHint node - it might be at different paths
-	interaction_hint = get_node_or_null("InteractionHint")
+	var hint_paths = [
+		"InteractionHint",           # Direct child
+		"../InteractionHint",        # Sibling node
+		"BottomBar/InteractionHint", # In bottom bar
+		"./InteractionHint"          # Explicit current level
+	]
+	
+	for path in hint_paths:
+		interaction_hint = get_node_or_null(path)
+		if interaction_hint:
+			break
+	
+	# Only warn if interaction hints are expected to be shown
 	if not interaction_hint:
-		# Try alternate path if scene structure is different
-		interaction_hint = get_node_or_null("../InteractionHint")
-	if not interaction_hint:
-		push_warning("InteractionHint node not found in SimpleHUD")
+		print("Note: InteractionHint node not found - interaction hints will be disabled")
 	
 	# Connect to SignalBus events
 	SignalBus.ui_show_interaction_hint.connect(_on_show_interaction_hint)

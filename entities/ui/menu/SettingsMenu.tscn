@@ -77,16 +77,16 @@ text = "Duration"
 [node name="HSlider" type="HSlider" parent="VBoxContainer/GameDuration"]
 layout_mode = 2
 custom_minimum_size = Vector2(150, 0)
-min_value = 15.0
-max_value = 60.0
-step = 5.0
-value = 30.0
+min_value = 30.0
+max_value = 300.0
+step = 30.0
+value = 240.0
 
 [node name="ValueLabel" type="Label" parent="VBoxContainer/GameDuration"]
 layout_mode = 2
 custom_minimum_size = Vector2(50, 0)
 theme_override_font_sizes/font_size = 20
-text = "30s"
+text = "240s"
 
 [node name="BackButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2

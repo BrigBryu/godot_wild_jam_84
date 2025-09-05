@@ -1,310 +1,209 @@
 class_name WaveArea
 extends Area2D
 
-## Wave collision area that follows visual wave position
-## Handles detection of bodies entering/exiting the wave
+## Simple wave collision area using standard Godot Area2D
+## Eliminated ForceZone dependency - clean and focused
 
 @export var wave_state: WaveState
-@export var debug_draw: bool = false  # Disabled for release
-@export var debug_print: bool = false  # Disable spam - use targeted prints instead
+@export var wave_debug_draw: bool = false
+@export var debug_organisms: bool = true  # Debug organism wave interactions
 
-# Cached references
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+var _bodies_in_wave: Array[Node2D] = []
 
-# Tracking bodies in wave
-var bodies_in_wave: Dictionary = {}  # Node2D -> bool (just tracking if they're in)
-
-# Debug tracking
-var last_player_pos: Vector2 = Vector2.ZERO
-var position_check_timer: float = 0.0
-
-signal body_entered_wave(body: Node2D)
-signal body_exited_wave(body: Node2D)
+# Debug tracking - intelligent rate limiting
+var _debug_last_print_time: float = 0.0
+var _debug_print_interval: float = 2.0  # Print every 2 seconds max
+var _debug_organism_count: int = 0
 
 func _ready() -> void:
-	# Set up collision layers
-	set_collision_layer_value(10, true)  # Wave is on layer 10
-	set_collision_mask_value(1, true)  # Detect player (layer 1)
+	# Set up collision detection
+	set_collision_layer_value(10, true)  # Wave layer
+	set_collision_mask_value(1, true)    # Player
+	set_collision_mask_value(6, true)    # Organisms
 	
-	# Enable monitoring
 	monitoring = true
-	monitorable = true
-	
-	# Connect to body detection (not area detection)
 	body_entered.connect(_on_body_entered)
 	body_exited.connect(_on_body_exited)
 	
 	# Set up collision shape
-	if not collision_shape:
-		collision_shape = CollisionShape2D.new()
-		add_child(collision_shape)
-	
-	var rect_shape = RectangleShape2D.new()
-	# Set initial size to cover a reasonable area
-	rect_shape.size = Vector2(1920, 200)  # Default size
-	collision_shape.shape = rect_shape
-	collision_shape.position = Vector2(960, 420)  # Center position
-	
-	# DON'T lock Area2D position - let collision shape move freely!
-	# This was preventing the collision from following the wave!
-	# global_position = Vector2.ZERO  # REMOVED - this was the bug!
-	
-	# Connect to wave state changes if available
-	if wave_state:
-		wave_state.bounds_changed.connect(_on_wave_bounds_changed)
-		wave_state.position_changed.connect(_on_wave_position_changed)
+	if collision_shape and not collision_shape.shape:
+		var rect_shape = RectangleShape2D.new()
+		# Wave area should cover full water zone: shore to ocean edge
+		var wave_zone_height = GameConstants.OCEAN_EDGE_Y - GameConstants.SHORE_Y
+		rect_shape.size = Vector2(GameConstants.SCREEN_WIDTH, wave_zone_height)
+		collision_shape.shape = rect_shape
 
-func _physics_process(delta: float) -> void:
-	# Apply forces to bodies in wave
-	if wave_state:
-		_apply_forces_to_bodies(delta)
-	
-	# DEBUG: Only print on state changes
-	#if Engine.get_process_frames() % 120 == 0 and collision_shape:
-	#	if bodies_in_wave.size() > 0:
-	#		print("Wave area: %d bodies, Collision at Y=%.1f" % [bodies_in_wave.size(), collision_shape.position.y])
-	
-	# Debug: Check for position jumps (only if debug printing enabled)
-	if debug_print:
-		position_check_timer += delta
-		if position_check_timer >= 0.1:  # Check every 0.1 seconds
-			position_check_timer = 0.0
-			
-			# Find player in bodies
-			for body in bodies_in_wave.keys():
-				if body.is_in_group("player"):
-					var current_pos = body.global_position
-					if last_player_pos != Vector2.ZERO:
-						var distance = current_pos.distance_to(last_player_pos)
-						if distance > 50:  # Detect jumps greater than 50 pixels
-							pass
-							#print("⚠️ POSITION JUMP DETECTED!")
-							#print("   From: ", last_player_pos)
-							#print("   To: ", current_pos)
-							#print("   Distance: ", distance)
-							#print("   Wave Phase: ", wave_state.phase)
-					last_player_pos = current_pos
-		
-		queue_redraw()
+func _physics_process(_delta: float) -> void:
+	if wave_state and _bodies_in_wave.size() > 0:
+		_apply_wave_forces()
 
-func update_collision_shape(bounds: Rect2) -> void:
-	"""Update collision shape to match wave bounds"""
-	if not collision_shape or not collision_shape.shape:
+func _apply_wave_forces() -> void:
+	var force = _get_wave_force()
+	if force == Vector2.ZERO:
 		return
-	
-	var rect_shape = collision_shape.shape as RectangleShape2D
-	if not rect_shape:
-		return
-	
-	# Debug: Track significant shape changes
-	var old_size = rect_shape.size
-	var old_pos = collision_shape.position
-	
-	# Set shape size and position
-	rect_shape.size = bounds.size
-	collision_shape.position = bounds.get_center()
-	
-	# Force redraw for debug visualization
-	if debug_draw:
-		queue_redraw()
-	
-	# Debug: Report large changes
-	if debug_print:
-		var size_change = old_size.distance_to(rect_shape.size)
-		var pos_change = old_pos.distance_to(collision_shape.position)
-		if size_change > 100 or pos_change > 100:
-			pass
-			#print("📐 COLLISION SHAPE CHANGE:")
-			#print("   Size: ", old_size, " -> ", rect_shape.size, " (delta: ", size_change, ")")
-			#print("   Pos: ", old_pos, " -> ", collision_shape.position, " (delta: ", pos_change, ")")
+		
+	for body in _bodies_in_wave:
+		if is_instance_valid(body):
+			_apply_force_to_body(body, force)
 
-func _apply_forces_to_bodies(delta: float) -> void:
-	"""Apply SIMPLE wave forces to all bodies currently in the wave"""
-	if not wave_state:
-		return
-	
-	for body in bodies_in_wave.keys():
-		if not is_instance_valid(body):
-			bodies_in_wave.erase(body)
-			continue
-		
-		var force = Vector2.ZERO
-		
-		# DEAD SIMPLE - just apply force based on wave phase, no position factors!
-		match wave_state.phase:
-			"surging", "traveling":
-				# Push up the beach (negative Y) - INCREASED for more effect
-				force.y = -350.0  # Strong upward push (was 150)
-				
-			"retreating":
-				# Pull toward ocean (positive Y) - INCREASED for more effect
-				force.y = 280.0  # Strong pull back (was 120)
-				
-			"pausing":
-				# No forces - wave is holding still at peak
-				pass
-				
-			_:  # "calm"
-				# No forces when calm
-				pass
-		
-		# Apply force consistently to all bodies
-		# Force is in pixels/second, we multiply by delta to get pixels/frame
-		var frame_force = force * delta
-		
-		# Apply to player
-		if body.is_in_group("player"):
-			if body.has_method("apply_wave_force"):
-				# Player expects force in pixels/frame (will be added to velocity)
-				body.apply_wave_force(frame_force)
-			else:
-				# Fallback: directly modify velocity
-				if body is CharacterBody2D:
-					body.velocity += frame_force
-		
-		# Apply to organisms
-		elif body.is_in_group("organisms"):
-			if body.has_method("apply_wave_force"):
-				# Organisms also get force in pixels/frame for consistency
-				body.apply_wave_force(frame_force)
+func _get_wave_force() -> Vector2:
+	match wave_state.phase:
+		GameConstants.WavePhase.SURGING, GameConstants.WavePhase.TRAVELING:
+			return Vector2.UP * abs(GameConstants.SURGE_FORCE)
+		GameConstants.WavePhase.RETREATING:
+			return Vector2.DOWN * abs(GameConstants.RETREAT_FORCE)
+		_:
+			return Vector2.ZERO
 
-func is_body_in_wave_zone(body: Node2D) -> bool:
-	"""Simple check: is the body's Y position within the wave area?"""
-	if not wave_state:
-		return false
-	var body_y = body.global_position.y
-	return body_y > wave_state.edge_y and body_y < wave_state.bottom_y
+func _apply_force_to_body(body: Node2D, force: Vector2) -> void:
+	"""Apply wave force to body through ExternalForceComponent or direct method"""
+	var force_component = _get_force_component(body)
+	if force_component:
+		force_component.add_force(force, "wave", ExternalForceComponent.ForceMode.CONSTANT)
+		# Debug for organisms with rate limiting
+		if debug_organisms and body.is_in_group("organisms"):
+			_debug_log_force_application(body, force, "ExternalForceComponent")
+	elif body.has_method("apply_wave_force"):
+		body.apply_wave_force(force)
+		# Debug for organisms with rate limiting
+		if debug_organisms and body.is_in_group("organisms"):
+			_debug_log_force_application(body, force, "apply_wave_force")
+	else:
+		# Debug missing force handling
+		if debug_organisms and body.is_in_group("organisms"):
+			_debug_log("⚠️  ORGANISM NO FORCE HANDLING: %s (no ExternalForceComponent or apply_wave_force method)" % body.name)
+
+func _get_force_component(body: Node2D) -> ExternalForceComponent:
+	# If body is an organism or player, get its force component directly
+	if body.has_method("get_force_component"):
+		return body.get_force_component()
+	
+	# Fallback - look for component as child
+	return body.get_node_or_null("ExternalForceComponent")
+
 
 func _on_body_entered(body: Node2D) -> void:
-	"""Handle body entering wave area"""
-	# Check by name if groups aren't set yet, or by group
-	var is_player = body.name == "Player" or body.is_in_group("player")
-	var is_organism = body.is_in_group("organisms")
+	# Debug ALL body entries first
+	if debug_organisms:
+		_debug_log("🔍 BODY DETECTED: %s | Groups: %s | Layer: %d" % [
+			body.name,
+			str(body.get_groups()),
+			body.collision_layer if "collision_layer" in body else -1
+		])
 	
-	if is_player:
-		# Always print player wave entry
-		#print("🌊 PLAYER ENTERED WAVE at Y=%.1f (Phase: %s)" % [body.global_position.y, wave_state.phase if wave_state else "unknown"])
-		pass
-		if body not in bodies_in_wave:  # Prevent duplicate entries
-			bodies_in_wave[body] = true
-			body_entered_wave.emit(body)
-			
-			# Call method on body if it exists
-			if body.has_method("on_entered_wave"):
-				body.on_entered_wave()
-	elif is_organism:
-		#if debug_print:
-		#	print("🦀 ORGANISM ENTERED WAVE: ", body.name)
-		pass
-		if body not in bodies_in_wave:  # Prevent duplicate entries
-			bodies_in_wave[body] = true
-			body_entered_wave.emit(body)
-			
-			# Call method on body if it exists
-			if body.has_method("on_entered_wave"):
-				body.on_entered_wave()
+	if not _is_wave_body(body):
+		if debug_organisms:
+			_debug_log("❌ BODY REJECTED: %s (not wave body)" % body.name)
+		return
+		
+	_bodies_in_wave.append(body)
+	_notify_body_entered(body)
+	
+	# Debug logging for organisms
+	if debug_organisms and body.is_in_group("organisms"):
+		_debug_organism_count += 1
+		_debug_log("🌊 ORGANISM ENTERED WAVE: %s (Total: %d)" % [body.name, _debug_organism_count])
+	
+	if body.is_in_group("player"):
+		SignalBus.player_entered_water.emit()
 
 func _on_body_exited(body: Node2D) -> void:
-	"""Handle body exiting wave area"""
-	if body in bodies_in_wave:
-		var is_player = body.name == "Player" or body.is_in_group("player")
-		if is_player:
-			# Always print player wave exit with more info
-			#print("🌊 PLAYER EXITED WAVE at Y=%.1f" % body.global_position.y)
-			#if wave_state:
-			#	print("   Wave was in phase: %s" % wave_state.phase)
-			#	print("   Wave edge Y: %.1f, bottom Y: %.1f" % [wave_state.edge_y, wave_state.bottom_y])
-			pass
-		
-		bodies_in_wave.erase(body)
-		body_exited_wave.emit(body)
-		
-		# Call method on body if it exists
-		if body.has_method("on_exited_wave"):
-			body.on_exited_wave()
-
-func _on_wave_bounds_changed(new_bounds: Rect2) -> void:
-	"""Update collision when wave bounds change"""
-	update_collision_shape(new_bounds)
-
-func _on_wave_position_changed(_edge_y: float, _bottom_y: float) -> void:
-	"""React to wave position changes"""
-	# Update depths will happen in _physics_process
-	pass
-
-func get_bodies_in_wave() -> Array:
-	"""Get all bodies currently in the wave"""
-	return bodies_in_wave.keys()
-
-func is_body_in_wave(body: Node2D) -> bool:
-	"""Check if a specific body is in the wave"""
-	return body in bodies_in_wave
-
-func _draw() -> void:
-	"""Debug visualization"""
-	if not debug_draw or not collision_shape or not collision_shape.shape:
-		return
+	_bodies_in_wave.erase(body)
 	
+	# Clear wave forces
+	var force_component = _get_force_component(body)
+	if force_component:
+		force_component.clear_forces("wave")
+	elif body.has_method("apply_wave_force"):
+		body.apply_wave_force(Vector2.ZERO)  # Clear the force
+	
+	# Debug logging for organisms
+	if debug_organisms and body.is_in_group("organisms"):
+		_debug_organism_count = max(0, _debug_organism_count - 1)
+		_debug_log("🌊 ORGANISM EXITED WAVE: %s (Remaining: %d)" % [body.name, _debug_organism_count])
+	
+	_notify_body_exited(body)
+	if body.is_in_group("player"):
+		SignalBus.player_exited_water.emit()
+
+func _is_wave_body(body: Node2D) -> bool:
+	# Check if body is player or RigidBody2D organism
+	return body.is_in_group("player") or body.is_in_group("organisms")
+
+func _notify_body_entered(body: Node2D) -> void:
+	if body.has_method("on_entered_wave"):
+		body.on_entered_wave()
+	var wave_detector = body.get_node_or_null("WaveDetector")
+	if wave_detector and wave_detector.has_method("on_entered_wave"):
+		wave_detector.on_entered_wave()
+
+func _notify_body_exited(body: Node2D) -> void:
+	if body.has_method("on_exited_wave"):
+		body.on_exited_wave()
+	var wave_detector = body.get_node_or_null("WaveDetector")
+	if wave_detector and wave_detector.has_method("on_exited_wave"):
+		wave_detector.on_exited_wave()
+
+func update_collision_shape(bounds: Rect2) -> void:
+	if not collision_shape or not collision_shape.shape:
+		return
 	var rect_shape = collision_shape.shape as RectangleShape2D
 	if rect_shape:
-		# Draw the collision shape relative to its actual position
-		# Since Area2D is no longer locked at origin, use local coordinates
-		var rect = Rect2(
-			collision_shape.position - rect_shape.size / 2,
-			rect_shape.size
-		)
-		draw_rect(rect, Color.CYAN, false, 3.0)  # Thicker line for visibility
+		rect_shape.size = bounds.size
+		collision_shape.position.y = bounds.position.y + bounds.size.y * 0.5
+
+func get_affected_bodies() -> Array[Node2D]:
+	return _bodies_in_wave
+
+func is_body_in_wave_zone(body: Node2D) -> bool:
+	return body in _bodies_in_wave
+
+func _draw() -> void:
+	if not wave_debug_draw or not wave_state or not collision_shape:
+		return
+	var rect_shape = collision_shape.shape as RectangleShape2D
+	if rect_shape:
+		var rect = Rect2(-rect_shape.size * 0.5, rect_shape.size)
+		rect.position += collision_shape.position  
+		draw_rect(rect, Color(0.2, 0.5, 1.0, 0.3))
+
+# ============================================================================
+# INTELLIGENT DEBUG SYSTEM - Rate Limited & Informative
+# ============================================================================
+
+func _debug_log(message: String) -> void:
+	"""Rate-limited debug logging to prevent spam"""
+	if not debug_organisms:
+		return
 		
-		# Draw center cross for debugging
-		var center = collision_shape.position
-		draw_line(center - Vector2(20, 0), center + Vector2(20, 0), Color.CYAN, 2.0)
-		draw_line(center - Vector2(0, 20), center + Vector2(0, 20), Color.CYAN, 2.0)
+	var current_time = Time.get_time_dict_from_system()["second"]
+	if current_time != _debug_last_print_time:
+		print("WaveArea: " + message)
+		_debug_last_print_time = current_time
+
+func _debug_log_force_application(body: Node2D, force: Vector2, method: String) -> void:
+	"""Debug force application with intelligent filtering"""
+	if not debug_organisms:
+		return
 		
-		# Draw wave phase indicator
-		if wave_state:
-			var phase_color = Color.WHITE
-			var phase_text = wave_state.phase.to_upper()
-			match wave_state.phase:
-				"surging":
-					phase_color = Color.GREEN
-				"retreating":
-					phase_color = Color.RED
-				"pausing":
-					phase_color = Color.YELLOW
-				"traveling":
-					phase_color = Color.BLUE
-				"calm":
-					phase_color = Color.GRAY
+	# Only log when force is significant
+	if force.length() > 10.0:
+		var current_time = Time.get_time_dict_from_system()["second"] 
+		if current_time != _debug_last_print_time:
+			var wave_phase = "UNKNOWN"
+			if wave_state:
+				match wave_state.phase:
+					GameConstants.WavePhase.SURGING: wave_phase = "SURGING"
+					GameConstants.WavePhase.TRAVELING: wave_phase = "TRAVELING"  
+					GameConstants.WavePhase.RETREATING: wave_phase = "RETREATING"
+					GameConstants.WavePhase.CALM: wave_phase = "CALM"
+					GameConstants.WavePhase.PAUSING: wave_phase = "PAUSING"
 			
-			# Draw phase text at top of wave area
-			draw_string(ThemeDB.fallback_font, Vector2(10, collision_shape.position.y - rect_shape.size.y/2 + 20), 
-				"WAVE: " + phase_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, phase_color)
-		
-		# Draw body positions and force vectors
-		for body in bodies_in_wave:
-			if is_instance_valid(body):
-				var local_pos = to_local(body.global_position)
-				
-				# Draw body position
-				var body_color = Color.YELLOW if body.is_in_group("player") else Color.ORANGE
-				draw_circle(local_pos, 5.0, body_color)
-				
-				# Draw force vector if wave is active and applying forces
-				if wave_state and wave_state.phase not in ["calm", "pausing"]:
-					var force_dir = Vector2.ZERO
-					match wave_state.phase:
-						"surging", "traveling":
-							force_dir = Vector2(0, -1)  # Full upward push for both
-						"retreating":
-							force_dir = Vector2(0, 1)   # Downward pull
-					
-					if force_dir.length() > 0:
-						var arrow_end = local_pos + force_dir * 30.0
-						draw_line(local_pos, arrow_end, Color.RED, 2.0)
-						# Draw arrowhead
-						var arrow_angle = force_dir.angle()
-						var arrow_size = 8.0
-						var arrow_point1 = arrow_end + Vector2.from_angle(arrow_angle + 2.5) * -arrow_size
-						var arrow_point2 = arrow_end + Vector2.from_angle(arrow_angle - 2.5) * -arrow_size
-						draw_line(arrow_end, arrow_point1, Color.RED, 2.0)
-						draw_line(arrow_end, arrow_point2, Color.RED, 2.0)
+			print("WaveArea: 🌊 FORCE → %s | Force: %s | Phase: %s | Method: %s" % [
+				body.name, 
+				"(%.1f, %.1f)" % [force.x, force.y],
+				wave_phase,
+				method
+			])
+			_debug_last_print_time = current_time

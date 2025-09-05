@@ -50,7 +50,7 @@ func _on_timer_expired():
 	_show_game_over()
 
 func _format_time(time: float) -> String:
-	var minutes = int(time) / 60
+	var minutes = int(time) / 60.0  # Use float division
 	var seconds = int(time) % 60
 	return "%02d:%02d" % [minutes, seconds]
 
